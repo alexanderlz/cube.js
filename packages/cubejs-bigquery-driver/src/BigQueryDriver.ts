@@ -20,7 +20,7 @@ import {
 } from '@google-cloud/bigquery';
 import { Bucket, Storage } from '@google-cloud/storage';
 import {
-  BaseDriver, DownloadTableCSVData,
+  BaseDriver, DownloadQueryResultsOptions, DownloadQueryResultsResult, DownloadTableCSVData,
   DriverInterface, QueryOptions, StreamTableData,
 } from '@cubejs-backend/base-driver';
 import { Query } from '@google-cloud/bigquery/build/src/bigquery';
@@ -34,6 +34,11 @@ interface BigQueryDriverOptions extends BigQueryOptions {
   location?: string,
   pollTimeout?: number,
   pollMaxInterval?: number,
+
+  /**
+   * The export bucket CSV file escape symbol.
+   */
+  exportBucketCsvEscapeSymbol?: string,
 }
 
 type BigQueryDriverOptionsInitialized =
@@ -63,11 +68,26 @@ export class BigQueryDriver extends BaseDriver implements DriverInterface {
    */
   public constructor(
     config: BigQueryDriverOptions & {
+      /**
+       * Data source name.
+       */
       dataSource?: string,
+
+      /**
+       * Max pool size value for the [cube]<-->[db] pool.
+       */
       maxPoolSize?: number,
+
+      /**
+       * Time to wait for a response from a connection after validation
+       * request before determining it as not valid. Default - 10000 ms.
+       */
+      testConnectionTimeout?: number,
     } = {}
   ) {
-    super();
+    super({
+      testConnectionTimeout: config.testConnectionTimeout,
+    });
 
     const dataSource =
       config.dataSource ||
@@ -102,6 +122,7 @@ export class BigQueryDriver extends BaseDriver implements DriverInterface {
         config.pollMaxInterval ||
         getEnv('dbPollMaxInterval', { dataSource })
       ) * 1000,
+      exportBucketCsvEscapeSymbol: getEnv('dbExportBucketCsvEscapeSymbol', { dataSource }),
     };
 
     getEnv('dbExportBucketType', {
@@ -127,7 +148,9 @@ export class BigQueryDriver extends BaseDriver implements DriverInterface {
 
   public async testConnection() {
     await this.bigquery.query({
-      query: 'SELECT ? AS number', params: ['1']
+      query: 'SELECT ? AS number',
+      params: ['1'],
+      jobTimeoutMs: this.testConnectionTimeout(),
     });
   }
 
@@ -210,8 +233,8 @@ export class BigQueryDriver extends BaseDriver implements DriverInterface {
     return bigQueryTable.schema.fields.map((c: any) => ({ name: c.name, type: this.toGenericType(c.type) }));
   }
 
-  public async createSchemaIfNotExists(schemaName: string) {
-    return this.bigquery.dataset(schemaName).get({ autoCreate: true });
+  public async createSchemaIfNotExists(schemaName: string): Promise<void> {
+    await this.bigquery.dataset(schemaName).get({ autoCreate: true });
   }
 
   public async isUnloadSupported() {
@@ -251,12 +274,15 @@ export class BigQueryDriver extends BaseDriver implements DriverInterface {
     const urls = await Promise.all(files.map(async file => {
       const [url] = await file.getSignedUrl({
         action: 'read',
-        expires: new Date(new Date().getTime() + 60 * 60 * 1000)
+        expires: new Date(new Date().getTime() + 60 * 60 * 1000),
       });
       return url;
     }));
 
-    return { csvFile: urls };
+    return {
+      exportBucketCsvEscapeSymbol: this.options.exportBucketCsvEscapeSymbol,
+      csvFile: urls,
+    };
   }
 
   public async loadPreAggregationIntoTable(

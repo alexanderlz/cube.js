@@ -1,9 +1,9 @@
-mod analysis;
+pub mod analysis;
 pub mod converter;
 mod cost;
 pub mod language;
-mod rewriter;
-mod rules;
+pub mod rewriter;
+pub mod rules;
 
 use crate::{compile::rewrite::analysis::LogicalPlanAnalysis, CubeError};
 use datafusion::{
@@ -23,9 +23,32 @@ use egg::{
     rewrite, Applier, EGraph, Id, Pattern, PatternAst, Rewrite, SearchMatches, Searcher, Subst,
     Symbol, Var,
 };
-use std::{fmt::Display, ops::Index, slice::Iter, str::FromStr};
+use std::{
+    fmt::{self, Display, Formatter},
+    ops::Index,
+    slice::Iter,
+    str::FromStr,
+};
 
 // trace_macros!(true);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Hash)]
+pub enum LikeType {
+    Like,
+    ILike,
+    SimilarTo,
+}
+
+impl Display for LikeType {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        let join_type = match self {
+            LikeType::Like => "Like",
+            LikeType::ILike => "ILike",
+            LikeType::SimilarTo => "SimilarTo",
+        };
+        write!(f, "{}", join_type)
+    }
+}
 
 crate::plan_to_language! {
     pub enum LogicalPlanLanguage {
@@ -34,6 +57,7 @@ crate::plan_to_language! {
             input: Arc<LogicalPlan>,
             schema: DFSchemaRef,
             alias: Option<String>,
+            split: bool,
         },
         Filter {
             predicate: Expr,
@@ -49,6 +73,7 @@ crate::plan_to_language! {
             group_expr: Vec<Expr>,
             aggr_expr: Vec<Expr>,
             schema: DFSchemaRef,
+            split: bool,
         },
         Sort {
             exp: Vec<Expr>,
@@ -139,6 +164,13 @@ crate::plan_to_language! {
             op: Operator,
             right: Box<Expr>,
         },
+        LikeExpr {
+            like_type: LikeType,
+            negated: bool,
+            expr: Box<Expr>,
+            pattern: Box<Expr>,
+            escape_char: Option<char>,
+        },
         NotExpr { expr: Box<Expr>, },
         IsNotNullExpr { expr: Box<Expr>, },
         IsNullExpr { expr: Box<Expr>, },
@@ -212,8 +244,13 @@ crate::plan_to_language! {
             order: Vec<LogicalPlan>,
             limit: Option<usize>,
             offset: Option<usize>,
-            aliases: Option<Vec<String>>,
+            aliases: Option<Vec<(String, String)>>,
             split: bool,
+            can_pushdown_join: bool,
+        },
+        AllMembers {
+            cube: String,
+            alias: String,
         },
         Distinct {
             input: Arc<LogicalPlan>,
@@ -234,9 +271,15 @@ crate::plan_to_language! {
             cube: String,
             expr: Arc<Expr>,
         },
+        VirtualField {
+            name: String,
+            cube: String,
+            expr: Arc<Expr>,
+        },
         LiteralMember {
             value: ScalarValue,
             expr: Arc<Expr>,
+            relation: Option<String>,
         },
         Order {
             member: String,
@@ -275,11 +318,15 @@ crate::plan_to_language! {
         MemberReplacer {
             members: Vec<LogicalPlan>,
             alias_to_cube: Vec<((String, String), String)>,
+            aliases: Vec<(String, String)>,
         },
         MemberPushdownReplacer {
             members: Vec<LogicalPlan>,
             old_members: Arc<LogicalPlan>,
             alias_to_cube: Vec<((String, String), String)>,
+        },
+        MergedMembersReplacer {
+            members: Vec<LogicalPlan>,
         },
         ListConcatPushdownReplacer {
             members: Arc<LogicalPlan>,
@@ -296,13 +343,14 @@ crate::plan_to_language! {
             filters: Vec<LogicalPlan>,
             alias_to_cube: Vec<(String, String)>,
             members: Vec<LogicalPlan>,
+            aliases: Vec<(String, String)>,
         },
         FilterCastUnwrapReplacer {
             filters: Vec<LogicalPlan>,
         },
         OrderReplacer {
             sort_expr: Vec<LogicalPlan>,
-            column_name_to_member: Vec<(String, String)>,
+            column_name_to_member: Vec<(String, Option<String>)>,
         },
         InnerAggregateSplitReplacer {
             members: Vec<LogicalPlan>,
@@ -315,6 +363,24 @@ crate::plan_to_language! {
         OuterAggregateSplitReplacer {
             members: Vec<LogicalPlan>,
             alias_to_cube: Vec<(String, String)>,
+        },
+        GroupExprSplitReplacer {
+            members: Vec<LogicalPlan>,
+            alias_to_cube: Vec<(String, String)>,
+        },
+        GroupAggregateSplitReplacer {
+            members: Vec<LogicalPlan>,
+            alias_to_cube: Vec<(String, String)>,
+        },
+        // NOTE: converting this to a list might provide rewrite improvements
+        CaseExprReplacer {
+            members: Vec<LogicalPlan>,
+            alias_to_cube: Vec<(String, String)>,
+        },
+        EventNotification {
+            name: String,
+            members: Vec<LogicalPlan>,
+            meta: Option<Vec<(String, String)>>,
         },
     }
 }
@@ -366,17 +432,29 @@ impl ExprRewriter for WithColumnRelation {
     }
 }
 
-fn column_name_to_member_vec(member_name_to_expr: Vec<(String, Expr)>) -> Vec<(String, String)> {
+fn column_name_to_member_vec(
+    member_name_to_expr: Vec<(Option<String>, Expr)>,
+) -> Vec<(String, Option<String>)> {
     let mut relation = WithColumnRelation(None);
     member_name_to_expr
         .into_iter()
         .map(|(member, expr)| {
             vec![
-                (expr_column_name(expr.clone(), &None), member.to_string()),
+                (expr_column_name(expr.clone(), &None), member.clone()),
                 (expr_column_name_with_relation(expr, &mut relation), member),
             ]
         })
         .flatten()
+        .collect::<Vec<_>>()
+}
+
+fn column_name_to_member_to_aliases(
+    column_name_to_member: Vec<(String, Option<String>)>,
+) -> Vec<(String, String)> {
+    column_name_to_member
+        .into_iter()
+        .filter(|(_, member)| member.is_some())
+        .map(|(column_name, member)| (column_name, member.unwrap()))
         .collect::<Vec<_>>()
 }
 
@@ -391,6 +469,7 @@ fn member_name_by_alias(
             .into_iter()
             .find(|(cn, _)| cn == alias)
             .map(|(_, member)| member)
+            .flatten()
     } else {
         None
     }
@@ -553,8 +632,14 @@ fn scalar_fun_expr_args_empty_tail() -> String {
 }
 
 fn agg_fun_expr(fun_name: impl Display, args: Vec<impl Display>, distinct: impl Display) -> String {
+    let prefix = if fun_name.to_string().starts_with("?") {
+        ""
+    } else {
+        "AggregateFunctionExprFun:"
+    };
     format!(
-        "(AggregateFunctionExpr {} {} {})",
+        "(AggregateFunctionExpr {}{} {} {})",
+        prefix,
         fun_name,
         list_expr("AggregateFunctionExprArgs", args),
         distinct
@@ -573,8 +658,13 @@ fn limit(skip: impl Display, fetch: impl Display, input: impl Display) -> String
     format!("(Limit {} {} {})", skip, fetch, input)
 }
 
-fn aggregate(input: impl Display, group: impl Display, aggr: impl Display) -> String {
-    format!("(Aggregate {} {} {})", input, group, aggr)
+fn aggregate(
+    input: impl Display,
+    group: impl Display,
+    aggr: impl Display,
+    split: impl Display,
+) -> String {
+    format!("(Aggregate {} {} {} {})", input, group, aggr, split)
 }
 
 fn aggr_aggr_expr(left: impl Display, right: impl Display) -> String {
@@ -639,6 +729,19 @@ fn between_expr(
     format!("(BetweenExpr {} {} {} {})", expr, negated, low, high)
 }
 
+fn like_expr(
+    like_type: impl Display,
+    negated: impl Display,
+    expr: impl Display,
+    pattern: impl Display,
+    escape_char: impl Display,
+) -> String {
+    format!(
+        "(LikeExpr {} {} {} {} {})",
+        like_type, negated, expr, pattern, escape_char
+    )
+}
+
 fn negative_expr(expr: impl Display) -> String {
     format!("(NegativeExpr {})", expr)
 }
@@ -683,9 +786,13 @@ fn case_expr_var_arg(
     format!("(CaseExpr {} {} {})", expr, when_then, else_expr)
 }
 
-fn case_expr<D: Display>(when_then: Vec<(D, D)>, else_expr: impl Display) -> String {
+fn case_expr<D: Display>(
+    expr: Option<String>,
+    when_then: Vec<(D, D)>,
+    else_expr: Option<String>,
+) -> String {
     case_expr_var_arg(
-        "CaseExprExpr",
+        case_expr_expr(expr),
         list_expr(
             "CaseExprWhenThenExpr",
             when_then
@@ -694,7 +801,35 @@ fn case_expr<D: Display>(when_then: Vec<(D, D)>, else_expr: impl Display) -> Str
                 .flatten()
                 .collect(),
         ),
-        list_expr("CaseExprElseExpr", vec![else_expr]),
+        case_expr_else_expr(else_expr),
+    )
+}
+
+fn case_expr_expr(expr: Option<String>) -> String {
+    list_expr(
+        "CaseExprExpr",
+        match expr {
+            Some(expr) => vec![expr],
+            None => vec![],
+        },
+    )
+}
+
+fn case_expr_when_then_expr(left: impl Display, right: impl Display) -> String {
+    format!("(CaseExprWhenThenExpr {} {})", left, right)
+}
+
+fn case_expr_when_then_expr_empty_tail() -> String {
+    format!("CaseExprWhenThenExpr")
+}
+
+fn case_expr_else_expr(else_expr: Option<String>) -> String {
+    list_expr(
+        "CaseExprElseExpr",
+        match else_expr {
+            Some(else_expr) => vec![else_expr],
+            None => vec![],
+        },
     )
 }
 
@@ -702,16 +837,25 @@ fn literal_string(literal_str: impl Display) -> String {
     format!("(LiteralExpr LiteralExprValue:s:{})", literal_str)
 }
 
-fn literal_number(literal_number: i64) -> String {
+fn literal_int(literal_number: i64) -> String {
     format!("(LiteralExpr LiteralExprValue:i:{})", literal_number)
+}
+
+fn literal_float(literal_float: f64) -> String {
+    format!("(LiteralExpr LiteralExprValue:f:{})", literal_float)
 }
 
 fn literal_bool(literal_bool: bool) -> String {
     format!("(LiteralExpr LiteralExprValue:b:{})", literal_bool)
 }
 
-fn projection(expr: impl Display, input: impl Display, alias: impl Display) -> String {
-    format!("(Projection {} {} {})", expr, input, alias)
+fn projection(
+    expr: impl Display,
+    input: impl Display,
+    alias: impl Display,
+    split: impl Display,
+) -> String {
+    format!("(Projection {} {} {} {})", expr, input, alias, split)
 }
 
 fn sort(expr: impl Display, input: impl Display) -> String {
@@ -722,12 +866,47 @@ fn filter(expr: impl Display, input: impl Display) -> String {
     format!("(Filter {} {})", expr, input)
 }
 
+fn join(
+    left: impl Display,
+    right: impl Display,
+    left_on: impl Display,
+    right_on: impl Display,
+    join_type: impl Display,
+    join_constraint: impl Display,
+) -> String {
+    let join_type_prefix = if join_type.to_string().starts_with("?") {
+        ""
+    } else {
+        "JoinJoinType:"
+    };
+    let join_constraint_prefix = if join_constraint.to_string().starts_with("?") {
+        ""
+    } else {
+        "JoinJoinConstraint:"
+    };
+    format!(
+        "(Join {} {} {} {} {}{} {}{})",
+        left,
+        right,
+        left_on,
+        right_on,
+        join_type_prefix,
+        join_type,
+        join_constraint_prefix,
+        join_constraint,
+    )
+}
+
 fn cross_join(left: impl Display, right: impl Display) -> String {
     format!("(CrossJoin {} {})", left, right)
 }
 
-fn member_replacer(members: impl Display, aliases: impl Display) -> String {
-    format!("(MemberReplacer {} {})", members, aliases)
+fn member_replacer(
+    members: impl Display,
+    cube_aliases: impl Display,
+    aliases: impl Display,
+) -> String {
+    format!("(MemberReplacer {} {} {})", members, cube_aliases, aliases)
 }
 
 fn member_pushdown_replacer(
@@ -739,6 +918,10 @@ fn member_pushdown_replacer(
         "(MemberPushdownReplacer {} {} {})",
         members, old_members, alias_to_cube
     )
+}
+
+fn merged_members_replacer(members: impl Display) -> String {
+    format!("(MergedMembersReplacer {})", members)
 }
 
 fn list_concat_pushdown_replacer(members: impl Display) -> String {
@@ -768,10 +951,11 @@ fn filter_replacer(
     members: impl Display,
     alias_to_cube: impl Display,
     cube_members: impl Display,
+    aliases: impl Display,
 ) -> String {
     format!(
-        "(FilterReplacer {} {} {})",
-        members, alias_to_cube, cube_members
+        "(FilterReplacer {} {} {} {})",
+        members, alias_to_cube, cube_members, aliases
     )
 }
 
@@ -800,12 +984,35 @@ fn outer_aggregate_split_replacer(members: impl Display, alias_to_cube: impl Dis
     )
 }
 
+fn group_expr_split_replacer(members: impl Display, alias_to_cube: impl Display) -> String {
+    format!("(GroupExprSplitReplacer {} {})", members, alias_to_cube)
+}
+
+fn group_aggregate_split_replacer(members: impl Display, alias_to_cube: impl Display) -> String {
+    format!(
+        "(GroupAggregateSplitReplacer {} {})",
+        members, alias_to_cube
+    )
+}
+
+fn case_expr_replacer(members: impl Display, alias_to_cube: impl Display) -> String {
+    format!("(CaseExprReplacer {} {})", members, alias_to_cube)
+}
+
+fn event_notification(name: impl Display, members: impl Display, meta: impl Display) -> String {
+    format!("(EventNotification {} {} {})", name, members, meta)
+}
+
 fn cube_scan_members(left: impl Display, right: impl Display) -> String {
     format!("(CubeScanMembers {} {})", left, right)
 }
 
 fn cube_scan_members_empty_tail() -> String {
     format!("CubeScanMembers")
+}
+
+fn all_members(cube: impl Display, alias: impl Display) -> String {
+    format!("(AllMembers {} {})", cube, alias)
 }
 
 fn cube_scan_filters(left: impl Display, right: impl Display) -> String {
@@ -829,11 +1036,15 @@ fn order(member: impl Display, asc: impl Display) -> String {
 }
 
 fn filter_op(filters: impl Display, op: impl Display) -> String {
-    format!("(FilterOp {} FilterOpOp:{})", filters, op)
+    format!("(FilterOp {} {})", filters, op)
 }
 
 fn filter_op_filters(left: impl Display, right: impl Display) -> String {
     format!("(FilterOpFilters {} {})", left, right)
+}
+
+fn filter_op_filters_empty_tail() -> String {
+    format!("FilterOpFilters")
 }
 
 fn filter_member(member: impl Display, op: impl Display, values: impl Display) -> String {
@@ -864,8 +1075,12 @@ fn change_user_expr(cube: impl Display, expr: impl Display) -> String {
     format!("(ChangeUser {} {})", cube, expr)
 }
 
-fn literal_member(value: impl Display, expr: impl Display) -> String {
-    format!("(LiteralMember {} {})", value, expr)
+fn literal_member(value: impl Display, expr: impl Display, relation: impl Display) -> String {
+    format!("(LiteralMember {} {} {})", value, expr, relation)
+}
+
+fn virtual_field_expr(name: impl Display, cube: impl Display, expr: impl Display) -> String {
+    format!("(VirtualField {} {} {})", name, cube, expr)
 }
 
 fn time_dimension_expr(
@@ -902,10 +1117,11 @@ fn cube_scan(
     offset: impl Display,
     aliases: impl Display,
     split: impl Display,
+    can_pushdown_join: impl Display,
 ) -> String {
     format!(
-        "(Extension (CubeScan {} {} {} {} {} {} {} {}))",
-        alias_to_cube, members, filters, orders, limit, offset, aliases, split
+        "(Extension (CubeScan {} {} {} {} {} {} {} {} {}))",
+        alias_to_cube, members, filters, orders, limit, offset, aliases, split, can_pushdown_join,
     )
 }
 
@@ -917,6 +1133,64 @@ pub fn original_expr_name(
         Expr::Column(c) => c.name.to_string(),
         _ => e.name(&DFSchema::empty()).unwrap(),
     })
+}
+
+fn search_match_chained<'a>(
+    egraph: &EGraph<LogicalPlanLanguage, LogicalPlanAnalysis>,
+    cur_match: SearchMatches<'a, LogicalPlanLanguage>,
+    chain: Iter<(Var, Pattern<LogicalPlanLanguage>)>,
+) -> Option<SearchMatches<'a, LogicalPlanLanguage>> {
+    let mut chain = chain.clone();
+    let mut matches_to_merge = Vec::new();
+    if let Some((var, pattern)) = chain.next() {
+        for subst in cur_match.substs.iter() {
+            if let Some(id) = subst.get(var.clone()) {
+                if let Some(next_match) = pattern.search_eclass(egraph, id.clone()) {
+                    let chain_matches = search_match_chained(
+                        egraph,
+                        SearchMatches {
+                            eclass: cur_match.eclass.clone(),
+                            substs: next_match
+                                .substs
+                                .iter()
+                                .map(|next_subst| {
+                                    let mut new_subst = subst.clone();
+                                    for pattern_var in pattern.vars().into_iter() {
+                                        if let Some(pattern_var_value) = next_subst.get(pattern_var)
+                                        {
+                                            new_subst
+                                                .insert(pattern_var, pattern_var_value.clone());
+                                        }
+                                    }
+                                    new_subst
+                                })
+                                .collect::<Vec<_>>(),
+                            // TODO merge
+                            ast: cur_match.ast.clone(),
+                        },
+                        chain.clone(),
+                    );
+                    matches_to_merge.extend(chain_matches);
+                }
+            }
+        }
+        if !matches_to_merge.is_empty() {
+            let mut substs = Vec::new();
+            for m in matches_to_merge {
+                substs.extend(m.substs.clone());
+            }
+            Some(SearchMatches {
+                eclass: cur_match.eclass.clone(),
+                substs,
+                // TODO merge
+                ast: cur_match.ast.clone(),
+            })
+        } else {
+            None
+        }
+    } else {
+        Some(cur_match)
+    }
 }
 
 pub struct ChainSearcher {
@@ -967,58 +1241,7 @@ impl ChainSearcher {
         cur_match: SearchMatches<'a, LogicalPlanLanguage>,
         chain: Iter<(Var, Pattern<LogicalPlanLanguage>)>,
     ) -> Option<SearchMatches<'a, LogicalPlanLanguage>> {
-        let mut chain = chain.clone();
-        let mut matches_to_merge = Vec::new();
-        if let Some((var, pattern)) = chain.next() {
-            for subst in cur_match.substs.iter() {
-                if let Some(id) = subst.get(var.clone()) {
-                    if let Some(next_match) = pattern.search_eclass(egraph, id.clone()) {
-                        let chain_matches = self.search_match_chained(
-                            egraph,
-                            SearchMatches {
-                                eclass: cur_match.eclass.clone(),
-                                substs: next_match
-                                    .substs
-                                    .iter()
-                                    .map(|next_subst| {
-                                        let mut new_subst = subst.clone();
-                                        for pattern_var in pattern.vars().into_iter() {
-                                            if let Some(pattern_var_value) =
-                                                next_subst.get(pattern_var)
-                                            {
-                                                new_subst
-                                                    .insert(pattern_var, pattern_var_value.clone());
-                                            }
-                                        }
-                                        new_subst
-                                    })
-                                    .collect::<Vec<_>>(),
-                                // TODO merge
-                                ast: cur_match.ast.clone(),
-                            },
-                            chain.clone(),
-                        );
-                        matches_to_merge.extend(chain_matches);
-                    }
-                }
-            }
-            if !matches_to_merge.is_empty() {
-                let mut substs = Vec::new();
-                for m in matches_to_merge {
-                    substs.extend(m.substs.clone());
-                }
-                Some(SearchMatches {
-                    eclass: cur_match.eclass.clone(),
-                    substs,
-                    // TODO merge
-                    ast: cur_match.ast.clone(),
-                })
-            } else {
-                None
-            }
-        } else {
-            Some(cur_match)
-        }
+        search_match_chained(egraph, cur_match, chain)
     }
 }
 

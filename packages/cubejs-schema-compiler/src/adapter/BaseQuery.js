@@ -11,7 +11,13 @@ import cronParser from 'cron-parser';
 
 import moment from 'moment-timezone';
 import inflection from 'inflection';
-import { FROM_PARTITION_RANGE, MAX_SOURCE_ROW_LIMIT, inDbTimeZone, QueryAlias } from '@cubejs-backend/shared';
+import {
+  FROM_PARTITION_RANGE,
+  MAX_SOURCE_ROW_LIMIT,
+  inDbTimeZone,
+  QueryAlias,
+  getEnv,
+} from '@cubejs-backend/shared';
 
 import { UserError } from '../compiler/UserError';
 import { BaseMeasure } from './BaseMeasure';
@@ -332,9 +338,6 @@ class BaseQuery {
           throw new UserError(`Ungrouped query requires primary keys to be present in dimensions: ${missingPrimaryKeys.map(k => `'${k}'`).join(', ')}. Pass allowUngroupedWithoutPrimaryKey option to disable this check.`);
         }
       }
-      if (this.measures.length) {
-        throw new UserError('Measures aren\'t allowed in ungrouped query');
-      }
       if (this.measureFilters.length) {
         throw new UserError('Measure filters aren\'t allowed in ungrouped query');
       }
@@ -570,7 +573,7 @@ class BaseQuery {
     const preAggForQuery = this.preAggregations.findPreAggregationForQuery();
     const result = {};
     if (preAggForQuery && preAggForQuery.preAggregation.unionWithSourceData) {
-      const lambdaPreAgg = preAggForQuery.referencedPreAggregations[0];
+      const lambdaPreAgg = preAggForQuery.referencedPreAggregations[preAggForQuery.referencedPreAggregations.length - 1];
       // TODO(cristipp) Use source query instead of preaggregation references.
       const references = this.cubeEvaluator.evaluatePreAggregationReferences(lambdaPreAgg.cube, lambdaPreAgg.preAggregation);
       const lambdaQuery = this.newSubQuery(
@@ -850,6 +853,12 @@ class BaseQuery {
       () => this.dimensionColumns('q_0').concat(this.measures.map(m => m.selectColumns())).join(', '),
       renderedReferenceContext,
     );
+
+    const queryHasNoRemapping = this.evaluateSymbolSqlWithContext(
+      () => this.dimensionsForSelect().concat(this.measures).every(r => r.hasNoRemapping()),
+      renderedReferenceContext,
+    );
+
     const havingFilters = this.evaluateSymbolSqlWithContext(
       () => this.baseWhere(this.measureFilters),
       renderedReferenceContext,
@@ -860,7 +869,8 @@ class BaseQuery {
     if (
       toJoin.length === 1 &&
       this.measureFilters.length === 0 &&
-      this.measures.filter(m => m.expression).length === 0
+      this.measures.filter(m => m.expression).length === 0 &&
+      queryHasNoRemapping
     ) {
       return `${toJoin[0].replace(/^SELECT/, `SELECT ${this.topLimit()}`)} ${this.orderBy()}${this.groupByDimensionLimit()}`;
     }
@@ -1408,11 +1418,18 @@ class BaseQuery {
       }
       return this.preAggregations.originalSqlPreAggregationTable(foundPreAggregation);
     }
-    const evaluatedSql = this.evaluateSql(cube, this.cubeEvaluator.cubeFromPath(cube).sql);
+
+    const fromPath = this.cubeEvaluator.cubeFromPath(cube);
+    if (fromPath.sqlTable) {
+      return this.evaluateSql(cube, fromPath.sqlTable);
+    }
+
+    const evaluatedSql = this.evaluateSql(cube, fromPath.sql);
     const selectAsterisk = evaluatedSql.match(/^\s*select\s+\*\s+from\s+([a-zA-Z0-9_\-`".*]+)\s*$/i);
     if (selectAsterisk) {
       return selectAsterisk[1];
     }
+
     return `(${evaluatedSql})`;
   }
 
@@ -1596,8 +1613,8 @@ class BaseQuery {
     if (this.rowLimit !== null) {
       if (this.rowLimit === MAX_SOURCE_ROW_LIMIT) {
         limitClause = ` LIMIT ${this.paramAllocator.allocateParam(MAX_SOURCE_ROW_LIMIT)}`;
-      } else {
-        limitClause = ` LIMIT ${this.rowLimit && parseInt(this.rowLimit, 10) || 10000}`;
+      } else if (typeof this.rowLimit === 'number') {
+        limitClause = ` LIMIT ${this.rowLimit}`;
       }
     }
     const offsetClause = this.offset ? ` OFFSET ${parseInt(this.offset, 10)}` : '';
@@ -1943,6 +1960,13 @@ class BaseQuery {
     ) {
       return evaluateSql === '*' ? '1' : evaluateSql;
     }
+    if (this.ungrouped) {
+      if (symbol.type === 'count' || symbol.type === 'countDistinct' || symbol.type === 'countDistinctApprox') {
+        return '1';
+      } else {
+        return evaluateSql;
+      }
+    }
     if ((this.safeEvaluateSymbolContext().ungroupedAliases || {})[measurePath]) {
       evaluateSql = (this.safeEvaluateSymbolContext().ungroupedAliases || {})[measurePath];
     }
@@ -1970,10 +1994,14 @@ class BaseQuery {
         return this.primaryKeyCount(cubeName, true);
       }
     }
-    if (symbol.type === 'number') {
+    if (BaseQuery.isCalculatedMeasureType(symbol.type)) {
       return evaluateSql;
     }
     return `${symbol.type}(${evaluateSql})`;
+  }
+
+  static isCalculatedMeasureType(type) {
+    return type === 'number' || type === 'string' || type === 'time' || type === 'boolean';
   }
 
   aggregateOnGroupedColumn(symbol, evaluateSql, topLevelMerge, measurePath) {
@@ -2001,18 +2029,15 @@ class BaseQuery {
     return evaluateSql;
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  hllInit(sql) {
+  hllInit(_sql) {
     throw new UserError('Distributed approximate distinct count is not supported by this DB');
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  hllMerge(sql) {
+  hllMerge(_sql) {
     throw new UserError('Distributed approximate distinct count is not supported by this DB');
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  hllCardinality(sql) {
+  hllCardinality(_sql) {
     throw new UserError('Distributed approximate distinct count is not supported by this DB');
   }
 
@@ -2348,6 +2373,10 @@ class BaseQuery {
   }
 
   preAggregationReadOnly(_cube, _preAggregation) {
+    return false;
+  }
+
+  preAggregationAllowUngroupingWithPrimaryKey(_cube, _preAggregation) {
     return false;
   }
 

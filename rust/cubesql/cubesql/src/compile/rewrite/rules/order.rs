@@ -34,6 +34,7 @@ impl RewriteRules for OrderRules {
                         "?offset",
                         "?cube_aliases",
                         "?split",
+                        "?can_pushdown_join",
                     ),
                 ),
                 cube_scan(
@@ -45,6 +46,7 @@ impl RewriteRules for OrderRules {
                     "?offset",
                     "?cube_aliases",
                     "?split",
+                    "?can_pushdown_join",
                 ),
                 self.push_down_sort("?expr", "?members", "?aliases"),
             ),
@@ -145,7 +147,7 @@ impl OrderRules {
                     egraph[subst[column_name_to_member_var]],
                     OrderReplacerColumnNameToMember
                 ) {
-                    if let Some((_, member_name)) = column_name_to_member
+                    if let Some((_, Some(member_name))) = column_name_to_member
                         .iter()
                         .find(|(c, _)| c == &column_name)
                     {

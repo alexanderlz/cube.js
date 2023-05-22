@@ -6,18 +6,19 @@ use crate::{
         },
         rewrite::{
             analysis::LogicalPlanAnalysis, rewriter::Rewriter, AggregateFunctionExprDistinct,
-            AggregateFunctionExprFun, AggregateUDFExprFun, AliasExprAlias, AnyExprOp,
-            BetweenExprNegated, BinaryExprOp, CastExprDataType, ChangeUserMemberValue,
-            ColumnExprColumn, CubeScanAliases, CubeScanLimit, CubeScanOffset, DimensionName,
+            AggregateFunctionExprFun, AggregateSplit, AggregateUDFExprFun, AliasExprAlias,
+            AnyExprOp, BetweenExprNegated, BinaryExprOp, CastExprDataType, ChangeUserMemberValue,
+            ColumnExprColumn, CubeScanLimit, CubeScanOffset, DimensionName,
             EmptyRelationProduceOneRow, FilterMemberMember, FilterMemberOp, FilterMemberValues,
             FilterOpOp, InListExprNegated, JoinJoinConstraint, JoinJoinType, JoinLeftOn,
-            JoinRightOn, LimitFetch, LimitSkip, LiteralExprValue, LiteralMemberValue,
+            JoinRightOn, LikeExprEscapeChar, LikeExprLikeType, LikeExprNegated, LikeType,
+            LimitFetch, LimitSkip, LiteralExprValue, LiteralMemberRelation, LiteralMemberValue,
             LogicalPlanLanguage, MeasureName, MemberErrorError, OrderAsc, OrderMember,
-            OuterColumnExprColumn, OuterColumnExprDataType, ProjectionAlias, ScalarFunctionExprFun,
-            ScalarUDFExprFun, ScalarVariableExprDataType, ScalarVariableExprVariable,
-            SegmentMemberMember, SortExprAsc, SortExprNullsFirst, TableScanFetch,
-            TableScanProjection, TableScanSourceTableName, TableScanTableName, TableUDFExprFun,
-            TimeDimensionDateRange, TimeDimensionGranularity, TimeDimensionName,
+            OuterColumnExprColumn, OuterColumnExprDataType, ProjectionAlias, ProjectionSplit,
+            ScalarFunctionExprFun, ScalarUDFExprFun, ScalarVariableExprDataType,
+            ScalarVariableExprVariable, SegmentMemberMember, SortExprAsc, SortExprNullsFirst,
+            TableScanFetch, TableScanProjection, TableScanSourceTableName, TableScanTableName,
+            TableUDFExprFun, TimeDimensionDateRange, TimeDimensionGranularity, TimeDimensionName,
             TryCastExprDataType, UnionAlias, WindowFunctionExprFun, WindowFunctionExprWindowFrame,
         },
     },
@@ -33,7 +34,7 @@ use datafusion::{
     logical_plan::{
         build_join_schema, build_table_udf_schema, exprlist_to_fields, normalize_cols,
         plan::{Aggregate, Extension, Filter, Join, Projection, Sort, TableUDFs, Window},
-        CrossJoin, DFField, DFSchema, DFSchemaRef, Distinct, EmptyRelation, Expr, Limit,
+        CrossJoin, DFField, DFSchema, DFSchemaRef, Distinct, EmptyRelation, Expr, Like, Limit,
         LogicalPlan, LogicalPlanBuilder, TableScan, Union,
     },
     physical_plan::planner::DefaultPhysicalPlanner,
@@ -43,7 +44,9 @@ use datafusion::{
 use egg::{EGraph, Id, RecExpr};
 use itertools::Itertools;
 use serde_json::json;
-use std::{collections::HashMap, ops::Index, sync::Arc};
+use std::{collections::HashMap, env, ops::Index, sync::Arc};
+
+pub use super::rewriter::CubeRunner;
 
 macro_rules! add_data_node {
     ($converter:expr, $value_expr:expr, $field_variant:ident) => {
@@ -151,6 +154,46 @@ impl LogicalPlanToLanguageConverter {
                 let right = self.add_expr(right)?;
                 self.graph
                     .add(LogicalPlanLanguage::BinaryExpr([left, op, right]))
+            }
+            ast @ Expr::Like(Like {
+                negated,
+                expr,
+                pattern,
+                escape_char,
+            })
+            | ast @ Expr::ILike(Like {
+                negated,
+                expr,
+                pattern,
+                escape_char,
+            })
+            | ast @ Expr::SimilarTo(Like {
+                negated,
+                expr,
+                pattern,
+                escape_char,
+            }) => {
+                let like_type = add_data_node!(
+                    self,
+                    match ast {
+                        Expr::Like(_) => LikeType::Like,
+                        Expr::ILike(_) => LikeType::ILike,
+                        Expr::SimilarTo(_) => LikeType::SimilarTo,
+                        _ => panic!("Expected LIKE, ILIKE, SIMILAR TO, got: {}", ast),
+                    },
+                    LikeExprLikeType
+                );
+                let negated = add_data_node!(self, negated, LikeExprNegated);
+                let expr = self.add_expr(expr)?;
+                let pattern = self.add_expr(pattern)?;
+                let escape_char = add_data_node!(self, escape_char, LikeExprEscapeChar);
+                self.graph.add(LogicalPlanLanguage::LikeExpr([
+                    like_type,
+                    negated,
+                    expr,
+                    pattern,
+                    escape_char,
+                ]))
             }
             Expr::Not(expr) => {
                 let expr = self.add_expr(expr)?;
@@ -313,8 +356,9 @@ impl LogicalPlanToLanguageConverter {
                 let expr = add_expr_list_node!(self, node.expr, ProjectionExpr);
                 let input = self.add_logical_plan(node.input.as_ref())?;
                 let alias = add_data_node!(self, node.alias, ProjectionAlias);
+                let split = add_data_node!(self, false, ProjectionSplit);
                 self.graph
-                    .add(LogicalPlanLanguage::Projection([expr, input, alias]))
+                    .add(LogicalPlanLanguage::Projection([expr, input, alias, split]))
             }
             LogicalPlan::Filter(node) => {
                 let predicate = self.add_expr(&node.predicate)?;
@@ -332,8 +376,9 @@ impl LogicalPlanToLanguageConverter {
                 let input = self.add_logical_plan(node.input.as_ref())?;
                 let group_expr = add_expr_list_node!(self, node.group_expr, AggregateGroupExpr);
                 let aggr_expr = add_expr_list_node!(self, node.aggr_expr, AggregateAggrExpr);
+                let split = add_data_node!(self, false, AggregateSplit);
                 self.graph.add(LogicalPlanLanguage::Aggregate([
-                    input, group_expr, aggr_expr,
+                    input, group_expr, aggr_expr, split,
                 ]))
             }
             LogicalPlan::Sort(node) => {
@@ -461,6 +506,10 @@ impl LogicalPlanToLanguageConverter {
 
     pub fn take_rewriter(self) -> Rewriter {
         Rewriter::new(self.graph, self.cube_context)
+    }
+
+    pub fn take_runner(self) -> CubeRunner {
+        Rewriter::rewrite_runner(self.cube_context, self.graph)
     }
 }
 
@@ -646,6 +695,24 @@ pub fn node_to_expr(
             let op = match_data_node!(node_by_id, params[1], BinaryExprOp);
             let right = Box::new(to_expr(params[2].clone())?);
             Expr::BinaryExpr { left, op, right }
+        }
+        LogicalPlanLanguage::LikeExpr(params) => {
+            let like_type = match_data_node!(node_by_id, params[0], LikeExprLikeType);
+            let negated = match_data_node!(node_by_id, params[1], LikeExprNegated);
+            let expr = Box::new(to_expr(params[2].clone())?);
+            let pattern = Box::new(to_expr(params[3].clone())?);
+            let escape_char = match_data_node!(node_by_id, params[4], LikeExprEscapeChar);
+            let like_expr = Like {
+                negated,
+                expr,
+                pattern,
+                escape_char,
+            };
+            match like_type {
+                LikeType::Like => Expr::Like(like_expr),
+                LikeType::ILike => Expr::ILike(like_expr),
+                LikeType::SimilarTo => Expr::SimilarTo(like_expr),
+            }
         }
         LogicalPlanLanguage::NotExpr(params) => {
             let expr = Box::new(to_expr(params[0].clone())?);
@@ -900,10 +967,31 @@ impl LanguageToLogicalPlanConverter {
                 LogicalPlan::Sort(Sort { expr, input })
             }
             LogicalPlanLanguage::Join(params) => {
-                let left = Arc::new(self.to_logical_plan(params[0])?);
-                let right = Arc::new(self.to_logical_plan(params[1])?);
                 let left_on = match_data_node!(node_by_id, params[2], JoinLeftOn);
                 let right_on = match_data_node!(node_by_id, params[3], JoinRightOn);
+                let left = self.to_logical_plan(params[0]);
+                let right = self.to_logical_plan(params[1]);
+
+                if self.is_cube_scan_node(params[0]) && self.is_cube_scan_node(params[1]) {
+                    if left_on.iter().any(|c| c.name == "__cubeJoinField")
+                        || right_on.iter().any(|c| c.name == "__cubeJoinField")
+                    {
+                        return Err(CubeError::internal(
+                            "Can not join Cubes. This is most likely due to one of the following reasons:\n\
+                            • one of the cubes contains a group by\n\
+                            • one of the cubes contains a measure\n\
+                            • the cube on the right contains a filter, sorting or limits\n".to_string(),
+                        ));
+                    } else {
+                        return Err(CubeError::internal(
+                            "Use __cubeJoinField to join Cubes".to_string(),
+                        ));
+                    }
+                }
+
+                let left = Arc::new(left?);
+                let right = Arc::new(right?);
+
                 let join_type = match_data_node!(node_by_id, params[4], JoinJoinType);
                 let join_constraint = match_data_node!(node_by_id, params[5], JoinJoinConstraint);
                 let schema = Arc::new(build_join_schema(
@@ -924,6 +1012,15 @@ impl LanguageToLogicalPlanConverter {
                 })
             }
             LogicalPlanLanguage::CrossJoin(params) => {
+                if self.is_cube_scan_node(params[0]) && self.is_cube_scan_node(params[1]) {
+                    return Err(CubeError::internal(
+                        "Can not join Cubes. This is most likely due to one of the following reasons:\n\
+                        • one of the cubes contains a group by\n\
+                        • one of the cubes contains a measure\n\
+                        • the cube on the right contains a filter, sorting or limits\n".to_string(),
+                    ));
+                }
+
                 let left = Arc::new(self.to_logical_plan(params[0])?);
                 let right = Arc::new(self.to_logical_plan(params[1])?);
                 let schema = Arc::new(left.schema().join(right.schema())?);
@@ -1183,9 +1280,14 @@ impl LanguageToLogicalPlanConverter {
                                     let value =
                                         match_data_node!(node_by_id, params[0], LiteralMemberValue);
                                     let expr = self.to_expr(params[1])?;
+                                    let relation = match_data_node!(
+                                        node_by_id,
+                                        params[2],
+                                        LiteralMemberRelation
+                                    );
                                     fields.push((
                                         DFField::new(
-                                            expr_relation(&expr),
+                                            relation.as_deref(),
                                             &expr_name(&expr)?,
                                             value.get_datatype(),
                                             true,
@@ -1193,10 +1295,29 @@ impl LanguageToLogicalPlanConverter {
                                         MemberField::Literal(value),
                                     ));
                                 }
+                                LogicalPlanLanguage::VirtualField(params) => {
+                                    let expr = self.to_expr(params[2])?;
+                                    fields.push((
+                                        DFField::new(
+                                            expr_relation(&expr),
+                                            // TODO empty schema
+                                            &expr_name(&expr)?,
+                                            DataType::Utf8,
+                                            true,
+                                        ),
+                                        MemberField::Literal(ScalarValue::Utf8(None)),
+                                    ));
+                                }
                                 LogicalPlanLanguage::MemberError(params) => {
                                     let error =
                                         match_data_node!(node_by_id, params[0], MemberErrorError);
                                     return Err(CubeError::user(error.to_string()));
+                                }
+                                LogicalPlanLanguage::AllMembers(_) => {
+                                    return Err(CubeError::internal(
+                                        "Can't detect Cube query and it may be not supported yet"
+                                            .to_string(),
+                                    ));
                                 }
                                 x => panic!("Expected dimension but found {:?}", x),
                             }
@@ -1412,9 +1533,40 @@ impl LanguageToLogicalPlanConverter {
                         } else {
                             None
                         };
-                        query.limit =
-                            match_data_node!(node_by_id, cube_scan_params[4], CubeScanLimit)
-                                .map(|n| if n > 50000 { 50000 } else { n as i32 });
+                        let cube_scan_query_limit = env::var("CUBEJS_DB_QUERY_LIMIT")
+                            .map(|v| v.parse::<usize>().unwrap())
+                            .unwrap_or(50000);
+                        let fail_on_max_limit_hit = env::var("CUBESQL_FAIL_ON_MAX_LIMIT_HIT")
+                            .map(|v| v.to_lowercase() == "true")
+                            .unwrap_or(false);
+                        let mut limit_was_changed = false;
+                        query.limit = match match_data_node!(
+                            node_by_id,
+                            cube_scan_params[4],
+                            CubeScanLimit
+                        ) {
+                            Some(n) => {
+                                if n > cube_scan_query_limit {
+                                    limit_was_changed = true;
+                                }
+                                Some(n)
+                            }
+                            None => {
+                                if fail_on_max_limit_hit {
+                                    limit_was_changed = true;
+                                    Some(cube_scan_query_limit)
+                                } else {
+                                    None
+                                }
+                            }
+                        }
+                        .map(|n| n as i32);
+
+                        let max_records = if fail_on_max_limit_hit && limit_was_changed {
+                            Some(cube_scan_query_limit)
+                        } else {
+                            None
+                        };
 
                         let offset =
                             match_data_node!(node_by_id, cube_scan_params[5], CubeScanOffset)
@@ -1423,32 +1575,10 @@ impl LanguageToLogicalPlanConverter {
                             query.offset = offset;
                         }
 
-                        let aliases =
-                            match_data_node!(node_by_id, cube_scan_params[6], CubeScanAliases);
-
                         fields = fields
                             .into_iter()
                             .unique_by(|(f, _)| f.qualified_name())
                             .collect();
-
-                        if let Some(aliases) = aliases {
-                            let mut new_fields = Vec::with_capacity(aliases.len());
-
-                            // Aliases serve solely column ordering purpose as fields generally not ordered
-                            for alias in aliases.iter() {
-                                let field_for_alias = fields
-                                    .iter()
-                                    .find(|(f, _)| f.name() == alias)
-                                    .ok_or(CubeError::internal(format!(
-                                        "Unable to find field for alias {}",
-                                        alias
-                                    )))?;
-
-                                new_fields.push(field_for_alias.clone());
-                            }
-
-                            fields = new_fields;
-                        }
 
                         let member_fields = fields.iter().map(|(_, m)| m.clone()).collect();
 
@@ -1460,7 +1590,10 @@ impl LanguageToLogicalPlanConverter {
                             member_fields,
                             query,
                             self.auth_context.clone(),
-                            CubeScanOptions { change_user },
+                            CubeScanOptions {
+                                change_user,
+                                max_records,
+                            },
                         ))
                     }
                     x => panic!("Unexpected extension node: {:?}", x),
@@ -1495,6 +1628,19 @@ impl LanguageToLogicalPlanConverter {
             }
             x => panic!("Unexpected logical plan node: {:?}", x),
         })
+    }
+
+    fn is_cube_scan_node(&self, node_id: Id) -> bool {
+        let node_by_id = &self.best_expr;
+        match node_by_id.index(node_id) {
+            LogicalPlanLanguage::Extension(params) => match node_by_id.index(params[0]) {
+                LogicalPlanLanguage::CubeScan(_) => return true,
+                _ => (),
+            },
+            _ => (),
+        }
+
+        return false;
     }
 }
 

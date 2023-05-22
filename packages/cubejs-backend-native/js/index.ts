@@ -1,5 +1,7 @@
 import fs from 'fs';
 import path from 'path';
+import { Writable } from 'stream';
+// import { getEnv } from '@cubejs-backend/shared';
 
 export interface BaseMeta {
     // postgres or mysql
@@ -53,6 +55,7 @@ export type SQLInterfaceOptions = {
     checkAuth: (payload: CheckAuthPayload) => CheckAuthResponse | Promise<CheckAuthResponse>,
     load: (payload: LoadPayload) => unknown | Promise<unknown>,
     meta: (payload: MetaPayload) => unknown | Promise<unknown>,
+    stream: (payload: LoadPayload) => unknown | Promise<unknown>,
 };
 
 function loadNative() {
@@ -98,11 +101,93 @@ function wrapNativeFunctionWithChannelCallback(
                     e
                 });
             }
-
-            channel.reject(e.message || 'Unknown JS exception');
+            try {
+                channel.reject(e.message || 'Unknown JS exception');
+            } catch(e) {
+                if (process.env.CUBEJS_NATIVE_INTERNAL_DEBUG) {
+                    console.debug("[js] channel.reject exception", {
+                        e
+                    });
+                }
+            }
 
             // throw e;
           }
+    };
+};
+
+const errorString = (err: any) =>
+  err.error ||
+    err.message ||
+    err.stack?.toString() ||
+    (typeof err === 'string' ? err.toString() : JSON.stringify(err));
+
+// TODO: Refactor - define classes
+function wrapNativeFunctionWithStream(
+    fn: (extra: any) => unknown | Promise<unknown>
+) {
+    const chunkLength = parseInt(
+        process.env.CUBEJS_DB_QUERY_STREAM_HIGH_WATER_MARK || '8192',
+        10
+    );
+    return async (extra: any, writer: any) => {
+        let streamResponse: any;
+        try {
+            streamResponse = await fn(JSON.parse(extra));
+            if (streamResponse && streamResponse.stream) {
+                writer.start();
+
+                let chunkBuffer: any[] = [];
+                const writable = new Writable({
+                    objectMode: true,
+                    highWaterMark: chunkLength,
+                    write(row: any, encoding: BufferEncoding, callback: (error?: (Error | null)) => void) {
+                        chunkBuffer.push(row);
+                        if (chunkBuffer.length < chunkLength) {
+                            callback(null);
+                        } else {
+                            const toSend = chunkBuffer;
+                            chunkBuffer = [];
+                            writer.chunk(toSend, callback);
+                        }
+
+                    },
+                    final(callback: (error?: (Error | null)) => void) {
+                        const end = (err: any) => {
+                            if (err) {
+                                callback(err);
+                            } else {
+                                writer.end(callback);
+                            }
+                        }
+                        if (chunkBuffer.length > 0) {
+                            const toSend = chunkBuffer;
+                            chunkBuffer = [];
+                            writer.chunk(toSend, end);
+                        } else {
+                            end(null);
+                        }
+                    },
+                    destroy(error: Error | null, callback: (error: (Error | null)) => void) {
+                        if (error) {
+                            writer.reject(errorString(error));
+                        }
+                        callback(null);
+                    }
+                });
+                streamResponse.stream.pipe(writable);
+                streamResponse.stream.on('error', (err: any) => {
+                    writable.destroy(err);
+                });
+            } else {
+                throw new Error(`Expected stream but nothing returned`);
+            }
+        } catch (e: any) {
+            if (!!streamResponse && !!streamResponse.stream) {
+                streamResponse.stream.destroy(e);
+            }
+            writer.reject(errorString(e));
+        }
     };
 };
 
@@ -132,12 +217,17 @@ export const registerInterface = async (options: SQLInterfaceOptions): Promise<S
         throw new Error('options.meta must be a function');
     }
 
+    if (typeof options.stream != 'function') {
+        throw new Error('options.stream must be a function');
+    }
+
     const native = loadNative();
     return native.registerInterface({
         ...options,
         checkAuth: wrapNativeFunctionWithChannelCallback(options.checkAuth),
         load: wrapNativeFunctionWithChannelCallback(options.load),
         meta: wrapNativeFunctionWithChannelCallback(options.meta),
+        stream: wrapNativeFunctionWithStream(options.stream),
     });
 };
 

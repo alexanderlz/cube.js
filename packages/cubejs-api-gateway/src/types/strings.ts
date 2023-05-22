@@ -25,7 +25,8 @@ type ApiType =
   'sql' |
   'graphql' |
   'rest' |
-  'ws';
+  'ws' |
+  'stream';
 
 /**
  * Parsed query type data type.
@@ -97,6 +98,16 @@ type QueryOrderType =
   'asc' |
   'desc';
 
+/**
+ * ApiScopes data type.
+ */
+type ApiScopes =
+  'liveliness' |
+  'graphql' |
+  'meta' |
+  'data' |
+  'jobs';
+
 export {
   RequestType,
   ResultType,
@@ -108,4 +119,5 @@ export {
   FilterOperator,
   QueryTimeDimensionGranularity,
   QueryOrderType,
+  ApiScopes,
 };
