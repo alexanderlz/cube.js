@@ -24,4 +24,37 @@ export class VerticaQuery extends BaseQuery {
   timeGroupedColumn(granularity, dimension) {
     return `TRUNC(${dimension}, '${GRANULARITY_TO_INTERVAL[granularity]}')`;
   }
+
+  countDistinctApprox(sql) {
+    return `APPROXIMATE_COUNT_DISTINCT(${sql})`;
+  }
+
+  // THIS IS A WORKAROUND!
+  hllInit(sql) {
+    return `APPROXIMATE_COUNT_DISTINCT(${sql})`;
+  }
+
+  hllMerge(sql) {
+    return `APPROXIMATE_COUNT_DISTINCT(${sql})`;
+  }
+
+  hllCardinality(sql) {
+    return `APPROXIMATE_COUNT_DISTINCT(${sql})`;
+  }
+
+
+  defaultRefreshKeyRenewalThreshold() {
+    return 120;
+  }
+
+  defaultEveryRefreshKey() {
+    return {
+      every: '2 minutes'
+    };
+  }
+
+  nowTimestampSql() {
+    return 'CURRENT_TIMESTAMP';
+  }
+	
 }

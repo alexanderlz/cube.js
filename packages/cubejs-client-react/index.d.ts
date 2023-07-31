@@ -1,8 +1,8 @@
 /**
  * @title @cubejs-client/react
  * @permalink /@cubejs-client-react
- * @menuCategory Frontend Integrations
- * @subcategory Reference
+ * @menuCategory Reference
+ * @subcategory Frontend
  * @menuOrder 3
  * @description `@cubejs-client/react` provides React Components for easy Cube.js integration in a React app.
  */
@@ -308,6 +308,12 @@ declare module '@cubejs-client/react' {
      * Used for chart type update
      */
     updateChartType: (chartType: ChartType) => void;
+
+    /**
+     * Used to set the initial query for this component. Note that adding this prop turns this into an
+     * uncontrolled component and will only be able to execute `dryRun` queries. To use this component
+     * as a controlled component, use `setQuery` instead.
+     */
     query: Query;
     validatedQuery: Query;
     refresh: () => void;
@@ -324,6 +330,8 @@ declare module '@cubejs-client/react' {
 
   // todo: CubeMember
   export type AvailableCube<T = any> = {
+    type: 'cube' | 'view';
+    public: boolean;
     cubeName: string;
     cubeTitle: string;
     members: T[];
@@ -656,11 +664,11 @@ declare module '@cubejs-client/react' {
     sourceAxis: TSourceAxis;
     destinationAxis: TSourceAxis;
   };
-  
+
   type PivotConfigExtraUpdateFields = {
     limit?: number;
   };
-  
+
   type PivotConfigUpdater = {
     moveItem: (args: PivotConfigUpdaterArgs) => void;
     update: (pivotConfig: PivotConfig & PivotConfigExtraUpdateFields) => void;

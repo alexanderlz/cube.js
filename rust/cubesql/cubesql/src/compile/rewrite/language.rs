@@ -290,6 +290,8 @@ macro_rules! variant_field_struct {
                 AggregateFunction::ApproxPercentileCont => "ApproxPercentileCont",
                 AggregateFunction::ApproxPercentileContWithWeight => "ApproxPercentileContWithWeight",
                 AggregateFunction::ApproxMedian => "ApproxMedian",
+                AggregateFunction::BoolAnd => "BoolAnd",
+                AggregateFunction::BoolOr => "BoolOr",
             }
         );
     };
@@ -359,6 +361,7 @@ macro_rules! variant_field_struct {
                 BuiltinScalarFunction::ToDayInterval => "ToDayInterval",
                 BuiltinScalarFunction::Now => "Now",
                 BuiltinScalarFunction::UtcTimestamp => "UtcTimestamp",
+                BuiltinScalarFunction::CurrentDate => "CurrentDate",
                 BuiltinScalarFunction::Translate => "Translate",
                 BuiltinScalarFunction::Trim => "Trim",
                 BuiltinScalarFunction::Upper => "Upper",
@@ -421,6 +424,16 @@ macro_rules! variant_field_struct {
             @enum_struct $variant, $var_field, { JoinConstraint } -> {
                 JoinConstraint::On => "On",
                 JoinConstraint::Using => "Using",
+            }
+        );
+    };
+
+    ($variant:ident, $var_field:ident, LikeType) => {
+        $crate::variant_field_struct!(
+            @enum_struct $variant, $var_field, { LikeType } -> {
+                LikeType::Like => "Like",
+                LikeType::ILike => "ILike",
+                LikeType::SimilarTo => "SimilarTo",
             }
         );
     };
@@ -550,6 +563,9 @@ macro_rules! variant_field_struct {
                     } else if let Some(value) = typed_str.strip_prefix("i:") {
                         let n: i64 = value.parse().map_err(|err| CubeError::internal(format!("Can't parse i64 scalar value from '{}' with error: {}", typed_str, err)))?;
                         Ok([<$variant $var_field:camel>](ScalarValue::Int64(Some(n))))
+                    } else if let Some(value) = typed_str.strip_prefix("f:") {
+                        let n: f64 = value.parse().map_err(|err| CubeError::internal(format!("Can't parse f64 scalar value from '{}' with error: {}", typed_str, err)))?;
+                        Ok([<$variant $var_field:camel>](ScalarValue::Float64(Some(n))))
                     } else {
                         Err(CubeError::internal(format!("Can't convert {}. Should contains type type, actual: {}", s, typed_str)))
                     }

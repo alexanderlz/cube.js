@@ -1,6 +1,5 @@
 use crate::metastore::table::TablePath;
-use crate::metastore::MetaStore;
-use crate::queryplanner::InfoSchemaTableDef;
+use crate::queryplanner::{InfoSchemaTableDef, InfoSchemaTableDefContext};
 use crate::CubeError;
 use arrow::array::{ArrayRef, StringArray, TimestampNanosecondArray};
 use arrow::datatypes::{DataType, Field, TimeUnit};
@@ -13,8 +12,8 @@ pub struct TablesInfoSchemaTableDef;
 impl InfoSchemaTableDef for TablesInfoSchemaTableDef {
     type T = TablePath;
 
-    async fn rows(&self, meta_store: Arc<dyn MetaStore>) -> Result<Arc<Vec<TablePath>>, CubeError> {
-        meta_store.get_tables_with_path(false).await
+    async fn rows(&self, ctx: InfoSchemaTableDefContext) -> Result<Arc<Vec<TablePath>>, CubeError> {
+        ctx.meta_store.get_tables_with_path(false).await
     }
 
     fn columns(&self) -> Vec<(Field, Box<dyn Fn(Arc<Vec<TablePath>>) -> ArrayRef>)> {
@@ -55,6 +54,27 @@ impl InfoSchemaTableDef for TablesInfoSchemaTableDef {
                                 row.table
                                     .get_row()
                                     .build_range_end()
+                                    .as_ref()
+                                    .map(|t| t.timestamp_nanos())
+                            })
+                            .collect::<Vec<_>>(),
+                    ))
+                }),
+            ),
+            (
+                Field::new(
+                    "seal_at",
+                    DataType::Timestamp(TimeUnit::Nanosecond, None),
+                    false,
+                ),
+                Box::new(|tables| {
+                    Arc::new(TimestampNanosecondArray::from(
+                        tables
+                            .iter()
+                            .map(|row| {
+                                row.table
+                                    .get_row()
+                                    .seal_at()
                                     .as_ref()
                                     .map(|t| t.timestamp_nanos())
                             })

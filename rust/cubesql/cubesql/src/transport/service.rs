@@ -4,12 +4,16 @@ use cubeclient::{
     models::{V1LoadRequest, V1LoadRequestQuery, V1LoadResponse},
 };
 
+use datafusion::arrow::{datatypes::SchemaRef, record_batch::RecordBatch};
 use serde_derive::*;
 use std::{fmt::Debug, sync::Arc, time::Duration};
-use tokio::{sync::RwLock as RwLockAsync, time::Instant};
+use tokio::{
+    sync::{mpsc::Receiver, RwLock as RwLockAsync},
+    time::Instant,
+};
 
 use crate::{
-    compile::MetaContext,
+    compile::{engine::df::scan::MemberField, MetaContext},
     sql::{AuthContextRef, HttpAuthContext},
     CubeError,
 };
@@ -58,7 +62,18 @@ pub trait TransportService: Send + Sync + Debug {
         ctx: AuthContextRef,
         meta_fields: LoadRequestMeta,
     ) -> Result<V1LoadResponse, CubeError>;
+
+    async fn load_stream(
+        &self,
+        query: V1LoadRequestQuery,
+        ctx: AuthContextRef,
+        meta_fields: LoadRequestMeta,
+        schema: SchemaRef,
+        member_fields: Vec<MemberField>,
+    ) -> Result<CubeStreamReceiver, CubeError>;
 }
+
+pub type CubeStreamReceiver = Receiver<Option<Result<RecordBatch, CubeError>>>;
 
 #[derive(Debug)]
 struct MetaCacheBucket {
@@ -112,7 +127,7 @@ impl TransportService for HttpTransport {
             };
         }
 
-        let response = cube_api::meta_v1(&self.get_client_config_for_ctx(ctx)).await?;
+        let response = cube_api::meta_v1(&self.get_client_config_for_ctx(ctx), true).await?;
 
         let mut store = self.cache.write().await;
         if let Some(cache_bucket) = &*store {
@@ -153,5 +168,16 @@ impl TransportService for HttpTransport {
             cube_api::load_v1(&self.get_client_config_for_ctx(ctx), Some(request)).await?;
 
         Ok(response)
+    }
+
+    async fn load_stream(
+        &self,
+        _query: V1LoadRequestQuery,
+        _ctx: AuthContextRef,
+        _meta_fields: LoadRequestMeta,
+        _schema: SchemaRef,
+        _member_fields: Vec<MemberField>,
+    ) -> Result<CubeStreamReceiver, CubeError> {
+        panic!("Does not work for standalone mode yet");
     }
 }

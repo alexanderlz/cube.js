@@ -1,15 +1,37 @@
 const { Pool } = require('vertica-nodejs');
+const { types } = require('pg');
 const { BaseDriver } = require('@cubejs-backend/query-orchestrator');
 
 const defaultGenericType = 'text';
-const VerticaTypeToGenericType = {
+const GenericTypeToVertica = {
+  string: 'varchar',
+  text: 'long varchar',
+  int: 'integer',
+  bigint: 'bigint',
+  double: 'float',
+  decimal: 'decimal',
   boolean: 'boolean',
-  int: 'bigint',
-  float: 'double',
   date: 'date',
-  timestamp: 'timestamp',
-  timestamptz: 'timestamp',
-  numeric: 'decimal',
+  timestamp: 'timestamp'
+};
+
+const NativeTypeToVerticaType = {};
+
+Object.entries(types.builtins).forEach(([key, value]) => {
+  NativeTypeToVerticaType[value] = key;
+});
+
+const VerticaTypeToGenericType = {
+  // char is similar to bpchar in Vertica
+  char: 'varchar',
+  varchar: 'string',
+  integer: 'int',
+  bigint: 'bigint',
+  float: 'double',
+  decimal: 'decimal',
+  boolean: 'boolean',
+  date: 'date',
+  timestamp: 'timestamp'
 };
 
 class VerticaDriver extends BaseDriver {
@@ -32,6 +54,36 @@ class VerticaDriver extends BaseDriver {
   async query(query, values) {
     const queryResult = await this.pool.query(query, values);
     return queryResult.rows;
+  }
+
+
+  async downloadQueryResults(query, values, options){
+//    if (options.streamImport) {
+  //    return this.stream(query, values, options);
+    //}
+      //types: this.mapFields(res.fields),
+
+    const res = await this.query(query, values);
+    return {
+      rows: res.rows,
+      types: res.fields
+    };
+  }
+
+  async mapFields(fields) {
+    return fields.map((f) => {
+      const verticaType = this.getVerticaTypeForField(f.dataTypeID);
+      if (!verticaType) {
+        throw new Error(
+            `Unable to detect type for field "${f.name}" with dataTypeID: ${f.dataTypeID}`
+        );
+      }
+
+      return {
+        name: f.name,
+        type: this.toGenericType(verticaType)
+      };
+    });
   }
 
   readOnly() {
@@ -68,6 +120,14 @@ class VerticaDriver extends BaseDriver {
     );
   }
 
+  async getVerticaTypeForField(dataTypeID) {
+    if (dataTypeID in NativeTypeToVerticaType) {
+      return NativeTypeToVerticaType[dataTypeID].toLowerCase();
+    }
+
+    return null;
+  }
+
   async tableColumnTypes(table) {
     const [schema, name] = table.split('.');
 
@@ -91,3 +151,4 @@ class VerticaDriver extends BaseDriver {
 }
 
 module.exports = VerticaDriver;
+

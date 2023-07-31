@@ -1,8 +1,10 @@
 import R from 'ramda';
 import { getEnv } from '@cubejs-backend/shared';
+import { camelize } from 'inflection';
 
 import { UserError } from './UserError';
 import { DynamicReference } from './DynamicReference';
+import { camelizeCube } from './utils';
 
 const FunctionRegex = /function\s+\w+\(([A-Za-z0-9_,]*)|\(([\s\S]*?)\)\s*=>|\(?(\w+)\)?\s*=>/;
 const CONTEXT_SYMBOLS = {
@@ -40,6 +42,7 @@ export class CubeSymbols {
       const cubeDefinition = this.cubeDefinitions[cubeName];
       this.builtCubes[cubeName] = this.createCube(cubeDefinition);
     }
+
     return this.builtCubes[cubeName];
   }
 
@@ -47,6 +50,7 @@ export class CubeSymbols {
     let measures;
     let dimensions;
     let segments;
+
     const cubeObject = Object.assign({
       allDefinitions(type) {
         if (cubeDefinition.extends) {
@@ -117,6 +121,14 @@ export class CubeSymbols {
       errorReporter.error(`${duplicateNames.join(', ')} defined more than once`);
     }
 
+    camelizeCube(cube);
+
+    this.camelCaseTypes(cube.joins);
+    this.camelCaseTypes(cube.measures);
+    this.camelCaseTypes(cube.dimensions);
+    this.camelCaseTypes(cube.segments);
+    this.camelCaseTypes(cube.preAggregations);
+
     if (cube.preAggregations) {
       this.transformPreAggregations(cube.preAggregations);
     }
@@ -128,6 +140,25 @@ export class CubeSymbols {
       cube.segments || {},
       cube.preAggregations || {}
     );
+  }
+
+  /**
+   * @private
+   */
+  camelCaseTypes(obj) {
+    if (!obj) {
+      return;
+    }
+
+    // eslint-disable-next-line no-restricted-syntax
+    for (const member of Object.values(obj)) {
+      if (member.type && member.type.indexOf('_') !== -1) {
+        member.type = camelize(member.type, true);
+      }
+      if (member.relationship && member.relationship.indexOf('_') !== -1) {
+        member.relationship = camelize(member.relationship, true);
+      }
+    }
   }
 
   transformPreAggregations(preAggregations) {
@@ -238,6 +269,7 @@ export class CubeSymbols {
       joinHints = joinHints.concat(cubeName);
     }
     const self = this;
+    const { sqlResolveFn, cubeAliasFn, query, cubeReferencesUsed } = self.resolveSymbolsCallContext || {};
     return new Proxy({}, {
       get: (v, propertyName) => {
         if (propertyName === '__cubeName') {
@@ -251,7 +283,6 @@ export class CubeSymbols {
           }
           return undefined;
         }
-        const { sqlResolveFn, cubeAliasFn, query, cubeReferencesUsed } = self.resolveSymbolsCallContext || {};
         if (propertyName === 'toString') {
           return () => {
             if (query) {
@@ -261,7 +292,10 @@ export class CubeSymbols {
             if (cubeReferencesUsed) {
               cubeReferencesUsed.push(cube.cubeName());
             }
-            return cubeAliasFn && cubeAliasFn(cube.cubeName()) || cube.cubeName();
+            return cubeAliasFn && this.withSymbolsCallContext(
+              () => cubeAliasFn(cube.cubeName()),
+              { ...this.resolveSymbolsCallContext, joinHints }
+            ) || cube.cubeName();
           };
         }
         if (propertyName === 'sql') {

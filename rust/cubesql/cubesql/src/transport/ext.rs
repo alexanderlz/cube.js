@@ -25,14 +25,27 @@ impl V1CubeMetaMeasureExt for V1CubeMetaMeasure {
 
                 agg_type.eq(&"countDistinct".to_string())
                     || agg_type.eq(&"countDistinctApprox".to_string())
+                    || agg_type.eq(&"number".to_string())
             } else if expect_agg_type.eq(&"sum".to_string()) {
                 let agg_type = self.agg_type.as_ref().unwrap();
 
                 agg_type.eq(&"sum".to_string())
                     || agg_type.eq(&"count".to_string())
                     || agg_type.eq(&"number".to_string())
+            } else if expect_agg_type.eq(&"min".to_string())
+                || expect_agg_type.eq(&"max".to_string())
+            {
+                let agg_type = self.agg_type.as_ref().unwrap();
+
+                agg_type.eq(&"number".to_string())
+                    || agg_type.eq(&"string".to_string())
+                    || agg_type.eq(&"time".to_string())
+                    || agg_type.eq(&"boolean".to_string())
+                    || agg_type.eq(expect_agg_type)
             } else {
-                self.agg_type.as_ref().unwrap().eq(expect_agg_type)
+                let agg_type = self.agg_type.as_ref().unwrap();
+
+                agg_type.eq(&"number".to_string()) || agg_type.eq(expect_agg_type)
             }
         } else {
             false
@@ -202,6 +215,13 @@ impl V1CubeMetaExt for V1CubeMeta {
         columns.push(CubeColumn {
             name: "__user".to_string(),
             description: Some("Virtual column for security context switching".to_string()),
+            column_type: ColumnType::String,
+            can_be_null: true,
+        });
+
+        columns.push(CubeColumn {
+            name: "__cubeJoinField".to_string(),
+            description: Some("Virtual column for joining cubes".to_string()),
             column_type: ColumnType::String,
             can_be_null: true,
         });
