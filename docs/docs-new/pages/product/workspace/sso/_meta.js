@@ -1,4 +1,4 @@
 module.exports = {
-  "saml": "SAML",
+  "google-workspace": "Google Workspace",
   "okta": "Okta"
 }

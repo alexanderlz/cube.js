@@ -3,6 +3,321 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+## [0.33.58](https://github.com/cube-js/cube/compare/v0.33.57...v0.33.58) (2023-09-18)
+
+
+### Bug Fixes
+
+* **schema-compiler:** YAML - crash on empty string/null, fix [#7126](https://github.com/cube-js/cube/issues/7126) ([#7141](https://github.com/cube-js/cube/issues/7141)) ([73f5ca7](https://github.com/cube-js/cube/commit/73f5ca74a6b6d7ae66b5576c6c4446fda6b1a5de))
+* **schema-compiler:** YAML - crash on unammed measure/dimension/join, refs [#7033](https://github.com/cube-js/cube/issues/7033) ([#7142](https://github.com/cube-js/cube/issues/7142)) ([5c6a065](https://github.com/cube-js/cube/commit/5c6a065b5755d9a991bc89beeb15243b119511cb))
+
+
+
+
+
+## [0.33.57](https://github.com/cube-js/cube/compare/v0.33.56...v0.33.57) (2023-09-15)
+
+
+### Features
+
+* **cubesql:** `CONCAT` function support for SQL push down ([da24afe](https://github.com/cube-js/cube/commit/da24afebc844f6f983d6f4df76f2367168667036))
+* **cubesql:** DATE_TRUNC support for SQL push down ([#7132](https://github.com/cube-js/cube/issues/7132)) ([ae80eb1](https://github.com/cube-js/cube/commit/ae80eb1e45857cde14ec0ff9c15547f917d6fdd2))
+
+
+
+
+
+## [0.33.56](https://github.com/cube-js/cube/compare/v0.33.55...v0.33.56) (2023-09-13)
+
+**Note:** Version bump only for package @cubejs-backend/schema-compiler
+
+
+
+
+
+## [0.33.55](https://github.com/cube-js/cube/compare/v0.33.54...v0.33.55) (2023-09-12)
+
+**Note:** Version bump only for package @cubejs-backend/schema-compiler
+
+
+
+
+
+## [0.33.54](https://github.com/cube-js/cube/compare/v0.33.53...v0.33.54) (2023-09-12)
+
+
+### Features
+
+* **cubesql:** `ORDER BY` SQL push down support ([#7115](https://github.com/cube-js/cube/issues/7115)) ([49ea3cf](https://github.com/cube-js/cube/commit/49ea3cf0721f30da142fb021f860cc56b0a85ab6))
+
+
+
+
+
+## [0.33.53](https://github.com/cube-js/cube/compare/v0.33.52...v0.33.53) (2023-09-08)
+
+
+### Features
+
+* **cubesql:** Ungrouped SQL push down ([#7102](https://github.com/cube-js/cube/issues/7102)) ([4c7fde5](https://github.com/cube-js/cube/commit/4c7fde5a96a5db0978b72d0887e533450123e9f7))
+
+
+
+
+
+## [0.33.51](https://github.com/cube-js/cube/compare/v0.33.50...v0.33.51) (2023-09-06)
+
+**Note:** Version bump only for package @cubejs-backend/schema-compiler
+
+
+
+
+
+## [0.33.50](https://github.com/cube-js/cube/compare/v0.33.49...v0.33.50) (2023-09-04)
+
+**Note:** Version bump only for package @cubejs-backend/schema-compiler
+
+
+
+
+
+## [0.33.49](https://github.com/cube-js/cube/compare/v0.33.48...v0.33.49) (2023-08-31)
+
+**Note:** Version bump only for package @cubejs-backend/schema-compiler
+
+
+
+
+
+## [0.33.48](https://github.com/cube-js/cube/compare/v0.33.47...v0.33.48) (2023-08-23)
+
+**Note:** Version bump only for package @cubejs-backend/schema-compiler
+
+
+
+
+
+## [0.33.47](https://github.com/cube-js/cube/compare/v0.33.46...v0.33.47) (2023-08-15)
+
+
+### Features
+
+* **cubesql:** Support LIMIT for SQL push down ([1b5c19f](https://github.com/cube-js/cube/commit/1b5c19f03331ca4174b37614b8b41cdafc211ad7))
+
+
+
+
+
+## [0.33.46](https://github.com/cube-js/cube/compare/v0.33.45...v0.33.46) (2023-08-14)
+
+
+### Features
+
+* **cubesql:** Initial SQL push down support for BigQuery, Clickhouse and MySQL ([38467ab](https://github.com/cube-js/cube/commit/38467ab7de64803cd51acf4d5fc696938e52f778))
+
+
+
+
+
+## [0.33.45](https://github.com/cube-js/cube/compare/v0.33.44...v0.33.45) (2023-08-13)
+
+
+### Features
+
+* **cubesql:** CASE WHEN SQL push down ([#7029](https://github.com/cube-js/cube/issues/7029)) ([80e4a60](https://github.com/cube-js/cube/commit/80e4a609cdb983db0a600d0fff0fd5bfe31652ed))
+* **cubesql:** Whole SQL query push down to data sources ([#6629](https://github.com/cube-js/cube/issues/6629)) ([0e8a76a](https://github.com/cube-js/cube/commit/0e8a76a20cb37e675997f384785dd06e09175113))
+
+
+
+
+
+## [0.33.44](https://github.com/cube-js/cube/compare/v0.33.43...v0.33.44) (2023-08-11)
+
+
+### Bug Fixes
+
+* **cubejs-schema-compiler:** cube level public should take precedence over dimension level public ([#7005](https://github.com/cube-js/cube/issues/7005)) ([2161227](https://github.com/cube-js/cube/commit/216122708a2fa2732b3b4755e81f3eccde21f070))
+
+
+### Features
+
+* **schema-compiler:** Support .yaml.jinja extension, fix [#7018](https://github.com/cube-js/cube/issues/7018) ([#7023](https://github.com/cube-js/cube/issues/7023)) ([3f910fb](https://github.com/cube-js/cube/commit/3f910fb90d8b280e71867ff451f4433dec9a4efa))
+
+
+
+
+
+## [0.33.43](https://github.com/cube-js/cube/compare/v0.33.42...v0.33.43) (2023-08-04)
+
+**Note:** Version bump only for package @cubejs-backend/schema-compiler
+
+
+
+
+
+## [0.33.42](https://github.com/cube-js/cube/compare/v0.33.41...v0.33.42) (2023-08-03)
+
+
+### Bug Fixes
+
+* **mssql-driver:** Fix group by clause for queries with dimensions and cumulative measures in MS SQL ([#6526](https://github.com/cube-js/cube/issues/6526)) Thanks [@mfclarke-cnx](https://github.com/mfclarke-cnx)! ([e0ed3a2](https://github.com/cube-js/cube/commit/e0ed3a27c9decf00c00568ebb01b6689f410a44d))
+
+
+### Features
+
+* **schema-compiler:** allow passing a catalog ([#6964](https://github.com/cube-js/cube/issues/6964)) ([680f545](https://github.com/cube-js/cube/commit/680f54561a53d4c8b2108204f191ae9a3c22156e))
+
+
+
+
+
+## [0.33.41](https://github.com/cube-js/cube/compare/v0.33.40...v0.33.41) (2023-07-28)
+
+**Note:** Version bump only for package @cubejs-backend/schema-compiler
+
+
+
+
+
+## [0.33.40](https://github.com/cube-js/cube/compare/v0.33.39...v0.33.40) (2023-07-27)
+
+**Note:** Version bump only for package @cubejs-backend/schema-compiler
+
+
+
+
+
+## [0.33.39](https://github.com/cube-js/cube/compare/v0.33.38...v0.33.39) (2023-07-25)
+
+**Note:** Version bump only for package @cubejs-backend/schema-compiler
+
+
+
+
+
+## [0.33.38](https://github.com/cube-js/cube/compare/v0.33.37...v0.33.38) (2023-07-21)
+
+**Note:** Version bump only for package @cubejs-backend/schema-compiler
+
+
+
+
+
+## [0.33.37](https://github.com/cube-js/cube/compare/v0.33.36...v0.33.37) (2023-07-20)
+
+**Note:** Version bump only for package @cubejs-backend/schema-compiler
+
+
+
+
+
+## [0.33.36](https://github.com/cube-js/cube/compare/v0.33.35...v0.33.36) (2023-07-13)
+
+**Note:** Version bump only for package @cubejs-backend/schema-compiler
+
+
+
+
+
+## [0.33.34](https://github.com/cube-js/cube/compare/v0.33.33...v0.33.34) (2023-07-12)
+
+
+### Features
+
+* **schema:** Support python [@context](https://github.com/context)_func for jinja templates ([#6729](https://github.com/cube-js/cube/issues/6729)) ([2f2be58](https://github.com/cube-js/cube/commit/2f2be58d49e4baf2b389a94ba2c782f8579022ab))
+
+
+
+
+
+## [0.33.33](https://github.com/cube-js/cube/compare/v0.33.32...v0.33.33) (2023-07-08)
+
+
+### Features
+
+* **schema:** Support multitenancy for jinja templates ([#6793](https://github.com/cube-js/cube/issues/6793)) ([fb59e59](https://github.com/cube-js/cube/commit/fb59e590b09e13bfaecb794a9db7d0b861f38d3f))
+
+
+
+
+
+## [0.33.32](https://github.com/cube-js/cube/compare/v0.33.31...v0.33.32) (2023-07-07)
+
+**Note:** Version bump only for package @cubejs-backend/schema-compiler
+
+
+
+
+
+## [0.33.31](https://github.com/cube-js/cube/compare/v0.33.30...v0.33.31) (2023-07-01)
+
+
+### Bug Fixes
+
+* **databricks-jdbc-driver:** Return NULL decimal as NULL instead of 0 ([#6768](https://github.com/cube-js/cube/issues/6768)) ([c2ab19d](https://github.com/cube-js/cube/commit/c2ab19d86d6144e4f91f9e8fb681e17e87bfcef3))
+
+
+
+
+
+## [0.33.29](https://github.com/cube-js/cube/compare/v0.33.28...v0.33.29) (2023-06-20)
+
+**Note:** Version bump only for package @cubejs-backend/schema-compiler
+
+
+
+
+
+## [0.33.28](https://github.com/cube-js/cube/compare/v0.33.27...v0.33.28) (2023-06-19)
+
+
+### Bug Fixes
+
+* **schema:** Load jinja engine only when jinja templates exist ([#6741](https://github.com/cube-js/cube/issues/6741)) ([75469a6](https://github.com/cube-js/cube/commit/75469a67b58d0a730b29b57d4f05a4049462bf10))
+
+
+
+
+
+## [0.33.27](https://github.com/cube-js/cube/compare/v0.33.26...v0.33.27) (2023-06-17)
+
+**Note:** Version bump only for package @cubejs-backend/schema-compiler
+
+
+
+
+
+## [0.33.26](https://github.com/cube-js/cube/compare/v0.33.25...v0.33.26) (2023-06-14)
+
+
+### Features
+
+* **schema:** Initial support for jinja templates ([#6704](https://github.com/cube-js/cube/issues/6704)) ([338d1b7](https://github.com/cube-js/cube/commit/338d1b7ed03fc074c06fb028f731c9817ba8d419))
+
+
+
+
+
+## [0.33.25](https://github.com/cube-js/cube/compare/v0.33.24...v0.33.25) (2023-06-07)
+
+
+### Bug Fixes
+
+* schema generation joins and quotes ([#6695](https://github.com/cube-js/cube/issues/6695)) ([85dd2b5](https://github.com/cube-js/cube/commit/85dd2b55daba9a0fed3c13131d9c8acae600e136))
+* Support indexes in pre-aggs in yaml ([#6587](https://github.com/cube-js/cube/issues/6587)) ([eaec97d](https://github.com/cube-js/cube/commit/eaec97d99a386e39be937ae8770d422512b482ff))
+
+
+
+
+
+## [0.33.24](https://github.com/cube-js/cube/compare/v0.33.23...v0.33.24) (2023-06-05)
+
+**Note:** Version bump only for package @cubejs-backend/schema-compiler
+
+
+
+
+
 ## [0.33.21](https://github.com/cube-js/cube/compare/v0.33.20...v0.33.21) (2023-05-31)
 
 **Note:** Version bump only for package @cubejs-backend/schema-compiler

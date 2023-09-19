@@ -3,6 +3,115 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+## [0.33.57](https://github.com/cube-js/cube/compare/v0.33.56...v0.33.57) (2023-09-15)
+
+
+### Bug Fixes
+
+* **redshift-driver:** resolves issue where redshift column order can come back in a different order, causing pre-aggregations across partitions to encounter a union all error ([#6965](https://github.com/cube-js/cube/issues/6965)) Thanks [@jskarda829](https://github.com/jskarda829) [@magno32](https://github.com/magno32) ! ([30356d9](https://github.com/cube-js/cube/commit/30356d9a43485ae22a7c97378c9c303679480f05))
+
+
+### Features
+
+* **cubesql:** DATE_TRUNC support for SQL push down ([#7132](https://github.com/cube-js/cube/issues/7132)) ([ae80eb1](https://github.com/cube-js/cube/commit/ae80eb1e45857cde14ec0ff9c15547f917d6fdd2))
+
+
+
+
+
+## [0.33.43](https://github.com/cube-js/cube/compare/v0.33.42...v0.33.43) (2023-08-04)
+
+
+### Features
+
+* **duckdb-driver:** Allow to specify memory_limit as env variable ([#6982](https://github.com/cube-js/cube/issues/6982)) ([84211b2](https://github.com/cube-js/cube/commit/84211b2d0c282636f72f42644ce8af5a8d2f302e))
+
+
+
+
+
+## [0.33.41](https://github.com/cube-js/cube/compare/v0.33.40...v0.33.41) (2023-07-28)
+
+
+### Features
+
+* **duckdb:** s3 config support ([#6961](https://github.com/cube-js/cube/issues/6961)) ([7c10f49](https://github.com/cube-js/cube/commit/7c10f49420828eed773789c7db75cf97966a7727))
+
+
+
+
+
+## [0.33.39](https://github.com/cube-js/cube/compare/v0.33.38...v0.33.39) (2023-07-25)
+
+
+### Features
+
+* support motherduck token ([#6948](https://github.com/cube-js/cube/issues/6948)) ([f056088](https://github.com/cube-js/cube/commit/f056088e4e9aed4866629fcd6adfe263367b2661))
+
+
+
+
+
+## [0.33.34](https://github.com/cube-js/cube/compare/v0.33.33...v0.33.34) (2023-07-12)
+
+
+### Features
+
+* **schema:** Support python [@context](https://github.com/context)_func for jinja templates ([#6729](https://github.com/cube-js/cube/issues/6729)) ([2f2be58](https://github.com/cube-js/cube/commit/2f2be58d49e4baf2b389a94ba2c782f8579022ab))
+
+
+
+
+
+## [0.33.29](https://github.com/cube-js/cube/compare/v0.33.28...v0.33.29) (2023-06-20)
+
+
+### Features
+
+* **native:** Support darwin-aaarch64 ([#6745](https://github.com/cube-js/cube/issues/6745)) ([ea53e8d](https://github.com/cube-js/cube/commit/ea53e8d83c7d516e541e78175eac5534c7ea7531))
+
+
+
+
+
+## [0.33.28](https://github.com/cube-js/cube/compare/v0.33.27...v0.33.28) (2023-06-19)
+
+
+### Bug Fixes
+
+* **native:** Correct support detection (disable on darwin-aaarch64) ([#6737](https://github.com/cube-js/cube/issues/6737)) ([53c6ee9](https://github.com/cube-js/cube/commit/53c6ee9bddfb679dad28d88352e11b2f8a39e6ca))
+
+
+
+
+
+## [0.33.26](https://github.com/cube-js/cube/compare/v0.33.25...v0.33.26) (2023-06-14)
+
+
+### Bug Fixes
+
+* Correct duration for refresh sheduler interval warning ([#6724](https://github.com/cube-js/cube/issues/6724)) ([3482d29](https://github.com/cube-js/cube/commit/3482d293463c861848b18b773e43ba732ec56a4f))
+
+
+### Features
+
+* **schema:** Initial support for jinja templates ([#6704](https://github.com/cube-js/cube/issues/6704)) ([338d1b7](https://github.com/cube-js/cube/commit/338d1b7ed03fc074c06fb028f731c9817ba8d419))
+
+
+
+
+
+## [0.33.24](https://github.com/cube-js/cube/compare/v0.33.23...v0.33.24) (2023-06-05)
+
+
+### Bug Fixes
+
+* Multi data source CUBEJS_CONCURRENCY env ([#6683](https://github.com/cube-js/cube/issues/6683)) ([6beb0fb](https://github.com/cube-js/cube/commit/6beb0fb2f9d5b009f22e67ca72f78b3419c40861))
+
+
+
+
+
 ## [0.33.21](https://github.com/cube-js/cube/compare/v0.33.20...v0.33.21) (2023-05-31)
 
 **Note:** Version bump only for package @cubejs-backend/shared

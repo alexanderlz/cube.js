@@ -588,6 +588,16 @@ const variables: Record<string, (...args: any) => any> = {
     .default('true')
     .asBoolStrict(),
 
+  /**
+   * Fetch Columns by Ordinal Position
+   *
+   * Currently defaults to 'false' as changing this in a live deployment could break existing pre-aggregations.
+   * This will eventually default to true.
+   */
+  fetchColumnsByOrdinalPosition: (): boolean => get('CUBEJS_DB_FETCH_COLUMNS_BY_ORDINAL_POSITION')
+    .default('false')
+    .asBoolStrict(),
+
   /** ****************************************************************
    * JDBC options                                                    *
    ***************************************************************** */
@@ -1359,13 +1369,63 @@ const variables: Record<string, (...args: any) => any> = {
    * duckdb                                                         *
    ***************************************************************** */
 
-  duckdbHttpFs: ({
+  duckdbMotherDuckToken: ({
     dataSource
   }: {
     dataSource: string,
   }) => (
     process.env[
-      keyByDataSource('CUBEJS_DB_DUCKDB_HTTP_FS', dataSource)
+      keyByDataSource('CUBEJS_DB_DUCKDB_MOTHERDUCK_TOKEN', dataSource)
+    ]
+  ),
+  
+  duckdbS3Region: ({
+    dataSource
+  }: {
+    dataSource: string,
+  }) => (
+    process.env[
+      keyByDataSource('CUBEJS_DB_DUCKDB_S3_REGION', dataSource)
+    ]
+  ),
+  
+  duckdbS3AccessKeyId: ({
+    dataSource
+  }: {
+    dataSource: string,
+  }) => (
+    process.env[
+      keyByDataSource('CUBEJS_DB_DUCKDB_S3_ACCESS_KEY_ID', dataSource)
+    ]
+  ),
+  
+  duckdbS3SecretAccessKeyId: ({
+    dataSource
+  }: {
+    dataSource: string,
+  }) => (
+    process.env[
+      keyByDataSource('CUBEJS_DB_DUCKDB_S3_SECRET_ACCESS_KEY', dataSource)
+    ]
+  ),
+  
+  duckdbS3Endpoint: ({
+    dataSource
+  }: {
+    dataSource: string,
+  }) => (
+    process.env[
+      keyByDataSource('CUBEJS_DB_DUCKDB_S3_ENDPOINT', dataSource)
+    ]
+  ),
+
+  duckdbMemoryLimit: ({
+    dataSource
+  }: {
+    dataSource: string,
+  }) => (
+    process.env[
+      keyByDataSource('CUBEJS_DB_DUCKDB_MEMORY_LIMIT', dataSource)
     ]
   ),
 
@@ -1590,7 +1650,8 @@ const variables: Record<string, (...args: any) => any> = {
     .asInt(),
   maxSourceRowLimit: () => get('CUBEJS_MAX_SOURCE_ROW_LIMIT')
     .default(200000)
-    .asInt()
+    .asInt(),
+  convertTzForRawTimeDimension: () => get('CUBESQL_SQL_PUSH_DOWN').default('false').asBoolStrict(),
 };
 
 type Vars = typeof variables;

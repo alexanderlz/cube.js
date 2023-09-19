@@ -3,6 +3,94 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+## [0.33.58](https://github.com/cube-js/cube/compare/v0.33.57...v0.33.58) (2023-09-18)
+
+**Note:** Version bump only for package @cubejs-backend/elasticsearch-driver
+
+
+
+
+
+## [0.33.57](https://github.com/cube-js/cube/compare/v0.33.56...v0.33.57) (2023-09-15)
+
+**Note:** Version bump only for package @cubejs-backend/elasticsearch-driver
+
+
+
+
+
+## [0.33.43](https://github.com/cube-js/cube/compare/v0.33.42...v0.33.43) (2023-08-04)
+
+**Note:** Version bump only for package @cubejs-backend/elasticsearch-driver
+
+
+
+
+
+## [0.33.41](https://github.com/cube-js/cube/compare/v0.33.40...v0.33.41) (2023-07-28)
+
+**Note:** Version bump only for package @cubejs-backend/elasticsearch-driver
+
+
+
+
+
+## [0.33.39](https://github.com/cube-js/cube/compare/v0.33.38...v0.33.39) (2023-07-25)
+
+**Note:** Version bump only for package @cubejs-backend/elasticsearch-driver
+
+
+
+
+
+## [0.33.37](https://github.com/cube-js/cube/compare/v0.33.36...v0.33.37) (2023-07-20)
+
+**Note:** Version bump only for package @cubejs-backend/elasticsearch-driver
+
+
+
+
+
+## [0.33.34](https://github.com/cube-js/cube/compare/v0.33.33...v0.33.34) (2023-07-12)
+
+**Note:** Version bump only for package @cubejs-backend/elasticsearch-driver
+
+
+
+
+
+## [0.33.29](https://github.com/cube-js/cube/compare/v0.33.28...v0.33.29) (2023-06-20)
+
+**Note:** Version bump only for package @cubejs-backend/elasticsearch-driver
+
+
+
+
+
+## [0.33.28](https://github.com/cube-js/cube/compare/v0.33.27...v0.33.28) (2023-06-19)
+
+**Note:** Version bump only for package @cubejs-backend/elasticsearch-driver
+
+
+
+
+
+## [0.33.26](https://github.com/cube-js/cube/compare/v0.33.25...v0.33.26) (2023-06-14)
+
+**Note:** Version bump only for package @cubejs-backend/elasticsearch-driver
+
+
+
+
+
+## [0.33.24](https://github.com/cube-js/cube/compare/v0.33.23...v0.33.24) (2023-06-05)
+
+**Note:** Version bump only for package @cubejs-backend/elasticsearch-driver
+
+
+
+
+
 ## [0.33.21](https://github.com/cube-js/cube/compare/v0.33.20...v0.33.21) (2023-05-31)
 
 **Note:** Version bump only for package @cubejs-backend/elasticsearch-driver

@@ -3,6 +3,262 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+## [0.33.58](https://github.com/cube-js/cube/compare/v0.33.57...v0.33.58) (2023-09-18)
+
+**Note:** Version bump only for package @cubejs-backend/trino-driver
+
+
+
+
+
+## [0.33.57](https://github.com/cube-js/cube/compare/v0.33.56...v0.33.57) (2023-09-15)
+
+**Note:** Version bump only for package @cubejs-backend/trino-driver
+
+
+
+
+
+## [0.33.56](https://github.com/cube-js/cube/compare/v0.33.55...v0.33.56) (2023-09-13)
+
+**Note:** Version bump only for package @cubejs-backend/trino-driver
+
+
+
+
+
+## [0.33.55](https://github.com/cube-js/cube/compare/v0.33.54...v0.33.55) (2023-09-12)
+
+**Note:** Version bump only for package @cubejs-backend/trino-driver
+
+
+
+
+
+## [0.33.54](https://github.com/cube-js/cube/compare/v0.33.53...v0.33.54) (2023-09-12)
+
+**Note:** Version bump only for package @cubejs-backend/trino-driver
+
+
+
+
+
+## [0.33.53](https://github.com/cube-js/cube/compare/v0.33.52...v0.33.53) (2023-09-08)
+
+**Note:** Version bump only for package @cubejs-backend/trino-driver
+
+
+
+
+
+## [0.33.51](https://github.com/cube-js/cube/compare/v0.33.50...v0.33.51) (2023-09-06)
+
+**Note:** Version bump only for package @cubejs-backend/trino-driver
+
+
+
+
+
+## [0.33.50](https://github.com/cube-js/cube/compare/v0.33.49...v0.33.50) (2023-09-04)
+
+**Note:** Version bump only for package @cubejs-backend/trino-driver
+
+
+
+
+
+## [0.33.49](https://github.com/cube-js/cube/compare/v0.33.48...v0.33.49) (2023-08-31)
+
+**Note:** Version bump only for package @cubejs-backend/trino-driver
+
+
+
+
+
+## [0.33.48](https://github.com/cube-js/cube/compare/v0.33.47...v0.33.48) (2023-08-23)
+
+**Note:** Version bump only for package @cubejs-backend/trino-driver
+
+
+
+
+
+## [0.33.47](https://github.com/cube-js/cube/compare/v0.33.46...v0.33.47) (2023-08-15)
+
+**Note:** Version bump only for package @cubejs-backend/trino-driver
+
+
+
+
+
+## [0.33.46](https://github.com/cube-js/cube/compare/v0.33.45...v0.33.46) (2023-08-14)
+
+**Note:** Version bump only for package @cubejs-backend/trino-driver
+
+
+
+
+
+## [0.33.45](https://github.com/cube-js/cube/compare/v0.33.44...v0.33.45) (2023-08-13)
+
+**Note:** Version bump only for package @cubejs-backend/trino-driver
+
+
+
+
+
+## [0.33.44](https://github.com/cube-js/cube/compare/v0.33.43...v0.33.44) (2023-08-11)
+
+**Note:** Version bump only for package @cubejs-backend/trino-driver
+
+
+
+
+
+## [0.33.43](https://github.com/cube-js/cube/compare/v0.33.42...v0.33.43) (2023-08-04)
+
+**Note:** Version bump only for package @cubejs-backend/trino-driver
+
+
+
+
+
+## [0.33.42](https://github.com/cube-js/cube/compare/v0.33.41...v0.33.42) (2023-08-03)
+
+**Note:** Version bump only for package @cubejs-backend/trino-driver
+
+
+
+
+
+## [0.33.41](https://github.com/cube-js/cube/compare/v0.33.40...v0.33.41) (2023-07-28)
+
+**Note:** Version bump only for package @cubejs-backend/trino-driver
+
+
+
+
+
+## [0.33.40](https://github.com/cube-js/cube/compare/v0.33.39...v0.33.40) (2023-07-27)
+
+**Note:** Version bump only for package @cubejs-backend/trino-driver
+
+
+
+
+
+## [0.33.39](https://github.com/cube-js/cube/compare/v0.33.38...v0.33.39) (2023-07-25)
+
+**Note:** Version bump only for package @cubejs-backend/trino-driver
+
+
+
+
+
+## [0.33.38](https://github.com/cube-js/cube/compare/v0.33.37...v0.33.38) (2023-07-21)
+
+**Note:** Version bump only for package @cubejs-backend/trino-driver
+
+
+
+
+
+## [0.33.37](https://github.com/cube-js/cube/compare/v0.33.36...v0.33.37) (2023-07-20)
+
+**Note:** Version bump only for package @cubejs-backend/trino-driver
+
+
+
+
+
+## [0.33.36](https://github.com/cube-js/cube/compare/v0.33.35...v0.33.36) (2023-07-13)
+
+**Note:** Version bump only for package @cubejs-backend/trino-driver
+
+
+
+
+
+## [0.33.34](https://github.com/cube-js/cube/compare/v0.33.33...v0.33.34) (2023-07-12)
+
+**Note:** Version bump only for package @cubejs-backend/trino-driver
+
+
+
+
+
+## [0.33.33](https://github.com/cube-js/cube/compare/v0.33.32...v0.33.33) (2023-07-08)
+
+**Note:** Version bump only for package @cubejs-backend/trino-driver
+
+
+
+
+
+## [0.33.32](https://github.com/cube-js/cube/compare/v0.33.31...v0.33.32) (2023-07-07)
+
+**Note:** Version bump only for package @cubejs-backend/trino-driver
+
+
+
+
+
+## [0.33.31](https://github.com/cube-js/cube/compare/v0.33.30...v0.33.31) (2023-07-01)
+
+**Note:** Version bump only for package @cubejs-backend/trino-driver
+
+
+
+
+
+## [0.33.29](https://github.com/cube-js/cube/compare/v0.33.28...v0.33.29) (2023-06-20)
+
+**Note:** Version bump only for package @cubejs-backend/trino-driver
+
+
+
+
+
+## [0.33.28](https://github.com/cube-js/cube/compare/v0.33.27...v0.33.28) (2023-06-19)
+
+**Note:** Version bump only for package @cubejs-backend/trino-driver
+
+
+
+
+
+## [0.33.27](https://github.com/cube-js/cube/compare/v0.33.26...v0.33.27) (2023-06-17)
+
+**Note:** Version bump only for package @cubejs-backend/trino-driver
+
+
+
+
+
+## [0.33.26](https://github.com/cube-js/cube/compare/v0.33.25...v0.33.26) (2023-06-14)
+
+**Note:** Version bump only for package @cubejs-backend/trino-driver
+
+
+
+
+
+## [0.33.25](https://github.com/cube-js/cube/compare/v0.33.24...v0.33.25) (2023-06-07)
+
+**Note:** Version bump only for package @cubejs-backend/trino-driver
+
+
+
+
+
+## [0.33.24](https://github.com/cube-js/cube/compare/v0.33.23...v0.33.24) (2023-06-05)
+
+**Note:** Version bump only for package @cubejs-backend/trino-driver
+
+
+
+
+
 ## [0.33.21](https://github.com/cube-js/cube/compare/v0.33.20...v0.33.21) (2023-05-31)
 
 **Note:** Version bump only for package @cubejs-backend/trino-driver

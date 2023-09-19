@@ -46,14 +46,13 @@
       {
         "name": "RA",
         "measures": ["CUBE.count", "CUBE.runningTotal"],
-        "indexes": {
-          "category_index": {
-            "columns": [
-              "CUBE.count",
-              "CUBE.runningTotal"
-            ]
-          }
-        }
+        "indexes": [{
+          "name": "category_index",
+          "columns": [
+            "CUBE.count",
+            "CUBE.runningTotal"
+          ]
+        }]
       }
     ],
     "ECommerce": [
@@ -66,11 +65,10 @@
           "CUBE.totalSales",
           "CUBE.totalProfit"
         ],
-        "indexes": {
-          "category_index": {
-            "columns": ["CUBE.productName"]
-          }
-        }
+        "indexes": [{
+          "name": "category_index",
+          "columns": ["CUBE.productName"]
+        }]
       },
       {
         "name": "TA",
@@ -84,11 +82,10 @@
           "CUBE.totalSales",
           "CUBE.totalProfit"
         ],
-        "indexes": {
-          "category_index": {
-            "columns": ["CUBE.productName"]
-          }
-        }
+        "indexes": [{
+          "name": "category_index",
+          "columns": ["CUBE.productName"]
+        }]
       }
     ],
     "BigECommerce": [
@@ -104,11 +101,10 @@
           "CUBE.totalSales",
           "CUBE.totalProfit"
         ],
-        "indexes": {
-          "category_index": {
-            "columns": ["CUBE.productName"]
-          }
-        }
+        "indexes": [{
+          "name": "category_index",
+          "columns": ["CUBE.productName"]
+        }]
       }
     ]
   },
@@ -121,6 +117,8 @@
     "querying ECommerce: total quantity, avg discount, total sales, total profit by product + order + total -- noisy test",
     "querying ECommerce: partitioned pre-agg",
     "querying ECommerce: partitioned pre-agg higher granularity",
-    "querying BigECommerce: partitioned pre-agg"
+    "querying BigECommerce: partitioned pre-agg",
+    "querying BigECommerce: null sum",
+    "querying BigECommerce: null boolean"
   ]
 }

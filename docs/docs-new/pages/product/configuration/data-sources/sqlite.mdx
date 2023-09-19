@@ -4,17 +4,14 @@ redirect_from:
 ---
 
 # SQLite
-<WarningBox>
-  The driver for SQLite is{' '}
-  <a href="../databases#driver-support">community-supported</a> and is not
-  supported by Cube or the vendor.
-</WarningBox>
+
+<CommunitySupportedDriver dataSource="SQLite" />
 
 ## Prerequisites
 
 ## Setup
 
-###  Manual
+### Manual
 
 Add the following to a `.env` file in your Cube project:
 
@@ -36,4 +33,4 @@ CUBEJS_DB_NAME=my_sqlite_database
 SQLite does not support SSL connections.
 
 [ref-config-multiple-ds-decorating-env]:
-  /config/multiple-data-sources#configuring-data-sources-with-environment-variables-decorated-environment-variables
+  /product/configuration/advanced/multiple-data-sources#configuring-data-sources-with-environment-variables-decorated-environment-variables

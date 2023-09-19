@@ -3,6 +3,257 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+## [0.33.57](https://github.com/cube-js/cube/compare/v0.33.56...v0.33.57) (2023-09-15)
+
+
+### Bug Fixes
+
+* **cubestore:** Eviction - schedule compaction as blocking task ([#7133](https://github.com/cube-js/cube/issues/7133)) ([009b1d6](https://github.com/cube-js/cube/commit/009b1d665e2e90c01a60e2a4192ee108b1838a1c))
+
+
+### Features
+
+* **cubestore:** Int96 and Decimal96 support ([#6952](https://github.com/cube-js/cube/issues/6952)) ([0262d67](https://github.com/cube-js/cube/commit/0262d67b7c3720224f61385356c6accc1e10cd4b))
+
+
+
+
+
+## [0.33.55](https://github.com/cube-js/cube/compare/v0.33.54...v0.33.55) (2023-09-12)
+
+
+### Features
+
+* **cubestore:** Cache - auto trigger for full compaction ([#7120](https://github.com/cube-js/cube/issues/7120)) ([675a0a0](https://github.com/cube-js/cube/commit/675a0a085f7049b23c2b212fc7ecdfd064006986))
+
+
+
+
+
+## [0.33.54](https://github.com/cube-js/cube.js/compare/v0.33.53...v0.33.54) (2023-09-12)
+
+
+### Bug Fixes
+
+* **cubestore:** COUNT(*) don't work on subquery with aggregation ([#7117](https://github.com/cube-js/cube.js/issues/7117)) ([fa48e92](https://github.com/cube-js/cube.js/commit/fa48e92128ce3695963371977d5475cfbe9b3eeb))
+* **cubestore:** Fix error in projection pushdown ([#7119](https://github.com/cube-js/cube.js/issues/7119)) ([88ef3d6](https://github.com/cube-js/cube.js/commit/88ef3d6d1bae235e47a9948aa0940a06bf2c2687))
+
+
+### Features
+
+* **cubestore:** Increase parallelism for Cache Store ([#7114](https://github.com/cube-js/cube.js/issues/7114)) ([ad1b146](https://github.com/cube-js/cube.js/commit/ad1b146fcd63ff8eccfb719f79c82922a7b08b7e))
+
+
+
+
+
+## [0.33.50](https://github.com/cube-js/cube/compare/v0.33.49...v0.33.50) (2023-09-04)
+
+
+### Bug Fixes
+
+* **cubestore:** Eviction - correct size counting for old keys ([#7097](https://github.com/cube-js/cube/issues/7097)) ([8ded651](https://github.com/cube-js/cube/commit/8ded651cfdd0e1595cbbbaf6a2a5b6b212dae631))
+
+
+### Features
+
+* **cubestore:** Eviction - truncate expired keys ([#7081](https://github.com/cube-js/cube/issues/7081)) ([327f2dc](https://github.com/cube-js/cube/commit/327f2dc206a5a9b101e4edbc2099d58cb943b44a))
+
+
+
+
+
+## [0.33.49](https://github.com/cube-js/cube/compare/v0.33.48...v0.33.49) (2023-08-31)
+
+
+### Features
+
+* **cubestore:** Support eviction for cache ([#7034](https://github.com/cube-js/cube/issues/7034)) ([2f16cdf](https://github.com/cube-js/cube/commit/2f16cdf7fed06b815e3f4b10c75e2635661aed07))
+
+
+
+
+
+## [0.33.48](https://github.com/cube-js/cube/compare/v0.33.47...v0.33.48) (2023-08-23)
+
+
+### Features
+
+* **cubestore:** Optimize CACHE SET on update (uneeded clone) ([#7035](https://github.com/cube-js/cube/issues/7035)) ([8aea083](https://github.com/cube-js/cube/commit/8aea0839156d4b0f0f3c69e867088ab4da593bf5))
+* **cubestore:** Optimize QUEUE ACK/CANCEL, CACHE DELETE ([#7054](https://github.com/cube-js/cube/issues/7054)) ([ac7d1a8](https://github.com/cube-js/cube/commit/ac7d1a8ca14a2fefeea40c29eb64745b9127fd21))
+
+
+
+
+
+## [0.33.47](https://github.com/cube-js/cube.js/compare/v0.33.46...v0.33.47) (2023-08-15)
+
+
+### Bug Fixes
+
+* **cubestore:** Reduce memory usage while truncating ([#7031](https://github.com/cube-js/cube.js/issues/7031)) ([29080d7](https://github.com/cube-js/cube.js/commit/29080d72661bb23529d35343a7b1f4f20cda9ec6))
+
+
+
+
+
+## [0.33.46](https://github.com/cube-js/cube.js/compare/v0.33.45...v0.33.46) (2023-08-14)
+
+
+### Bug Fixes
+
+* **cubestore:** Missing filter in the middle of an index prunes unnecessary partitions ([5690d8d](https://github.com/cube-js/cube.js/commit/5690d8da87e1d3959620ba43cd0b0648d3285d68))
+
+
+
+
+
+## [0.33.44](https://github.com/cube-js/cube/compare/v0.33.43...v0.33.44) (2023-08-11)
+
+
+### Bug Fixes
+
+* **cubestore:** Store value_version for secondary index as u32 ([#7019](https://github.com/cube-js/cube/issues/7019)) ([c8cfd62](https://github.com/cube-js/cube/commit/c8cfd6248a81edb4950404fa40fa89405f84b387))
+
+
+
+
+
+## [0.33.43](https://github.com/cube-js/cube/compare/v0.33.42...v0.33.43) (2023-08-04)
+
+
+### Bug Fixes
+
+* **cubestore:** Mark nullable fields for system.cache/queue/queue_results ([#6984](https://github.com/cube-js/cube/issues/6984)) ([9e64e71](https://github.com/cube-js/cube/commit/9e64e71902f99d6ce50d4599116f92fce06ecfa5))
+
+
+### Features
+
+* **cubestore:** Limit push down for system tables (cache, queue, queue_results) ([#6977](https://github.com/cube-js/cube/issues/6977)) ([ace2054](https://github.com/cube-js/cube/commit/ace20547de5fce8a28cb3542ea482daa6eebc2b8))
+
+
+
+
+
+## [0.33.41](https://github.com/cube-js/cube/compare/v0.33.40...v0.33.41) (2023-07-28)
+
+**Note:** Version bump only for package @cubejs-backend/cubestore
+
+
+
+
+
+## [0.33.40](https://github.com/cube-js/cube/compare/v0.33.39...v0.33.40) (2023-07-27)
+
+
+### Features
+
+* **cubestore:** Tracking data amount using in processing ([#6887](https://github.com/cube-js/cube/issues/6887)) ([92cae7a](https://github.com/cube-js/cube/commit/92cae7a6feffb8f65b8c165e4c958e17c93c47eb))
+
+
+
+
+
+## [0.33.39](https://github.com/cube-js/cube/compare/v0.33.38...v0.33.39) (2023-07-25)
+
+**Note:** Version bump only for package @cubejs-backend/cubestore
+
+
+
+
+
+## [0.33.34](https://github.com/cube-js/cube/compare/v0.33.33...v0.33.34) (2023-07-12)
+
+**Note:** Version bump only for package @cubejs-backend/cubestore
+
+
+
+
+
+## [0.33.33](https://github.com/cube-js/cube.js/compare/v0.33.32...v0.33.33) (2023-07-08)
+
+**Note:** Version bump only for package @cubejs-backend/cubestore
+
+
+
+
+
+## [0.33.32](https://github.com/cube-js/cube.js/compare/v0.33.31...v0.33.32) (2023-07-07)
+
+**Note:** Version bump only for package @cubejs-backend/cubestore
+
+
+
+
+
+## [0.33.31](https://github.com/cube-js/cube.js/compare/v0.33.30...v0.33.31) (2023-07-01)
+
+
+### Bug Fixes
+
+* **cubestore:** FreeInMemoryChunks fires if there is no inmemory chunks ([#6771](https://github.com/cube-js/cube.js/issues/6771)) ([f9cfd77](https://github.com/cube-js/cube.js/commit/f9cfd770a646f45c44e554d5b16ba2cddd8b1c48))
+
+
+
+
+
+## [0.33.29](https://github.com/cube-js/cube/compare/v0.33.28...v0.33.29) (2023-06-20)
+
+**Note:** Version bump only for package @cubejs-backend/cubestore
+
+
+
+
+
+## [0.33.28](https://github.com/cube-js/cube/compare/v0.33.27...v0.33.28) (2023-06-19)
+
+**Note:** Version bump only for package @cubejs-backend/cubestore
+
+
+
+
+
+## [0.33.27](https://github.com/cube-js/cube.js/compare/v0.33.26...v0.33.27) (2023-06-17)
+
+
+### Bug Fixes
+
+* Support unescaped `\\N` as NULL value for Snowflake driver ([#6735](https://github.com/cube-js/cube.js/issues/6735)) ([1f92ba6](https://github.com/cube-js/cube.js/commit/1f92ba6f5407f82703c8920b27a3a3e5a16fea41)), closes [#6693](https://github.com/cube-js/cube.js/issues/6693)
+
+
+
+
+
+## [0.33.26](https://github.com/cube-js/cube/compare/v0.33.25...v0.33.26) (2023-06-14)
+
+
+### Bug Fixes
+
+* **cubestore:** Out of memory on partition compaction ([#6705](https://github.com/cube-js/cube/issues/6705)) ([980b898](https://github.com/cube-js/cube/commit/980b8985e25928cc62446b76bb8d1182b10353ec))
+
+
+
+
+
+## [0.33.25](https://github.com/cube-js/cube/compare/v0.33.24...v0.33.25) (2023-06-07)
+
+**Note:** Version bump only for package @cubejs-backend/cubestore
+
+
+
+
+
+## [0.33.24](https://github.com/cube-js/cube/compare/v0.33.23...v0.33.24) (2023-06-05)
+
+
+### Features
+
+* **cubestore:** Priorities for job types ([#6502](https://github.com/cube-js/cube/issues/6502)) ([a457c5d](https://github.com/cube-js/cube/commit/a457c5da23b95be55e09e68c759e23f1299d17bf))
+
+
+
+
+
 ## [0.33.21](https://github.com/cube-js/cube/compare/v0.33.20...v0.33.21) (2023-05-31)
 
 **Note:** Version bump only for package @cubejs-backend/cubestore

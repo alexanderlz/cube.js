@@ -21,12 +21,15 @@ module.exports = {
   //     toc: false,
   //   },
   // },
-
-  docs: "[Demo] MDX Components",
+  docs: {
+    // type: "page",
+    title: "[Demo] MDX Components",
+    display: "hidden",
+  },
 
   product: {
     type: "page",
-    title: "Docs",
+    title: "Documentation",
   },
 
   reference: {

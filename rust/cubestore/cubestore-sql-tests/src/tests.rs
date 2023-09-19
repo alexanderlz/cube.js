@@ -65,6 +65,8 @@ pub fn sql_tests() -> Vec<(&'static str, TestFn)> {
         t("column_escaping", column_escaping),
         t("information_schema", information_schema),
         t("system_query_cache", system_query_cache),
+        t("metastore_rocksdb_tables", metastore_rocksdb_tables),
+        t("cachestore_rocksdb_tables", cachestore_rocksdb_tables),
         t("case_column_escaping", case_column_escaping),
         t("inner_column_escaping", inner_column_escaping),
         t("convert_tz", convert_tz),
@@ -266,6 +268,7 @@ pub fn sql_tests() -> Vec<(&'static str, TestFn)> {
         ),
         t("limit_pushdown_unique_key", limit_pushdown_unique_key),
         t("sys_drop_cache", sys_drop_cache),
+        t("sys_cachestore_info", sys_cachestore_info),
         t("sys_metastore_healthcheck", sys_metastore_healthcheck),
         t("sys_cachestore_healthcheck", sys_cachestore_healthcheck),
     ];
@@ -1395,9 +1398,18 @@ async fn system_query_cache(service: Box<dyn SqlClient>) {
         .exec_query("SELECT * FROM system.query_cache")
         .await
         .unwrap();
+}
 
+async fn metastore_rocksdb_tables(service: Box<dyn SqlClient>) {
     service
-        .exec_query("SELECT sql FROM system.query_cache;")
+        .exec_query("SELECT * FROM metastore.rocksdb_properties")
+        .await
+        .unwrap();
+}
+
+async fn cachestore_rocksdb_tables(service: Box<dyn SqlClient>) {
+    service
+        .exec_query("SELECT * FROM cachestore.rocksdb_properties")
         .await
         .unwrap();
 }
@@ -1969,7 +1981,7 @@ async fn create_table_with_location(service: Box<dyn SqlClient>) {
         file.write_all("5,New York,\"\",2021-01-25 19:12:23 UTC\n".as_bytes())
             .await
             .unwrap();
-        file.write_all("6,New York,\"\",\"\\N\"\n".as_bytes())
+        file.write_all("6,New York,\\\\N,\"\\N\"\n".as_bytes())
             .await
             .unwrap();
 
@@ -9275,6 +9287,10 @@ async fn queue_custom_orphaned(service: Box<dyn SqlClient>) {
         res.get_rows(),
         &vec![Row::new(vec![TableValue::String("1".to_string()),]),]
     );
+}
+
+async fn sys_cachestore_info(service: Box<dyn SqlClient>) {
+    service.exec_query("SYS CACHESTORE INFO").await.unwrap();
 }
 
 async fn sys_drop_cache(service: Box<dyn SqlClient>) {

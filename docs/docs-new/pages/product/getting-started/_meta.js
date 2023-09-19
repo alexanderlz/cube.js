@@ -1,5 +1,6 @@
 module.exports = {
-  "overview": "Overview",
   "core": "Cube Core",
-  "cloud": "Cube Cloud"
+  "cloud": "Cube Cloud and Snowflake",
+  "databricks": "Cube Cloud and Databricks",
+  "migrate-from-core": "Migrate from Cube Core"
 }

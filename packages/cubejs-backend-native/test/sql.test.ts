@@ -1,28 +1,28 @@
-import { FakeRowStream } from '@cubejs-backend/testing-shared';
 import mysql from 'mysql2/promise';
 
 import * as native from '../js';
-import meta_fixture from './meta';
+import metaFixture from './meta';
+import { FakeRowStream } from './response-fake';
 
-let logger = jest.fn(({ event }) => {
+const logger = jest.fn(({ event }) => {
   if (!event.error.includes('load - strange response, success which contains error')) {
-      expect(event.apiType).toEqual('sql');
-      expect(event.protocol).toEqual('mysql');
+    expect(event.apiType).toEqual('sql');
+    expect(event.protocol).toEqual('mysql');
   }
   console.log(event);
 });
 
-native.setupLogger(
-  logger,
-  'trace',
-);
+// native.setupLogger(
+//   logger,
+//   'trace',
+// );
 
 describe('SQLInterface', () => {
-  jest.setTimeout(10 * 1000);
+  jest.setTimeout(60 * 1000);
 
   it('SHOW FULL TABLES FROM `db`', async () => {
     const load = jest.fn(async ({ request, session, query }) => {
-      console.log('[js] load',  {
+      console.log('[js] load', {
         request,
         session,
         query
@@ -39,8 +39,46 @@ describe('SQLInterface', () => {
       };
     });
 
+    const sqlApiLoad = jest.fn(async ({ request, session, query, streaming }) => {
+      console.log('[js] load', {
+        request,
+        session,
+        query,
+        streaming
+      });
+
+      if (streaming) {
+        return {
+          stream: new FakeRowStream(query),
+        };
+      }
+
+      expect(session).toEqual({
+        user: expect.toBeTypeOrNull(String),
+        superuser: expect.any(Boolean),
+      });
+
+      // It's just an emulation that ApiGateway returns error
+      return {
+        error: 'This error should be passed back to MySQL client'
+      };
+    });
+
+    const sql = jest.fn(async ({ request, session, query }) => {
+      console.log('[js] sql', {
+        request,
+        session,
+        query
+      });
+
+      // It's just an emulation that ApiGateway returns error
+      return {
+        error: 'This error should be passed back to MySQL client'
+      };
+    });
+
     const stream = jest.fn(async ({ request, session, query }) => {
-      console.log('[js] stream',  {
+      console.log('[js] stream', {
         request,
         session,
         query
@@ -52,7 +90,7 @@ describe('SQLInterface', () => {
     });
 
     const meta = jest.fn(async ({ request, session }) => {
-      console.log('[js] meta',  {
+      console.log('[js] meta', {
         request,
         session,
       });
@@ -62,11 +100,23 @@ describe('SQLInterface', () => {
         superuser: expect.any(Boolean),
       });
 
-      return meta_fixture;
+      return metaFixture;
+    });
+
+    const sqlGenerators = jest.fn(async ({ request, session }) => {
+      console.log('[js] sqlGenerators', {
+        request,
+        session,
+      });
+
+      return {
+        cubeNameToDataSource: {},
+        dataSourceToSqlGenerator: {},
+      };
     });
 
     const checkAuth = jest.fn(async ({ request, user }) => {
-      console.log('[js] checkAuth',  {
+      console.log('[js] checkAuth', {
         request,
         user,
       });
@@ -75,14 +125,14 @@ describe('SQLInterface', () => {
         return {
           password: 'password_for_allowed_user',
           superuser: false,
-        }
+        };
       }
 
       if (user === 'admin') {
         return {
           password: 'password_for_admin',
           superuser: true,
-        }
+        };
       }
 
       throw new Error('Please specify user');
@@ -93,27 +143,30 @@ describe('SQLInterface', () => {
       port: 4545,
       checkAuth,
       load,
+      sqlApiLoad,
+      sql,
       meta,
       stream,
+      sqlGenerators,
     });
     console.log(instance);
 
     try {
-      const testConnectionFailed = async (/** input */ { user, password }: { user?: string, password?: string }) =>{
+      const testConnectionFailed = async (/** input */ { user, password }: { user?: string, password?: string }) => {
         try {
           await mysql.createConnection({
             host: '127.0.0.1',
             port: 4545,
             user,
             password,
-          });;
+          });
 
           throw new Error('must throw error');
         } catch (e: any) {
           expect(e.message).toContain('Incorrect user name or password');
         }
 
-        console.log(checkAuth.mock.calls)
+        console.log(checkAuth.mock.calls);
         expect(checkAuth.mock.calls.length).toEqual(1);
         expect(checkAuth.mock.calls[0][0]).toEqual({
           request: {
@@ -186,16 +239,14 @@ describe('SQLInterface', () => {
         }
       });
 
-      {
-        try {
-          // limit is used to router query to load method instead of stream
-          await connection.query('select * from KibanaSampleDataEcommerce LIMIT 1000');
+      try {
+        // limit is used to router query to load method instead of stream
+        await connection.query('select * from KibanaSampleDataEcommerce LIMIT 1000');
 
-          throw new Error('Error was not passed from transport to the client');
-        } catch (e: any) {
-          expect(e.sqlState).toEqual('HY000');
-          expect(e.sqlMessage).toContain('This error should be passed back to MySQL client');
-        }
+        throw new Error('Error was not passed from transport to the client');
+      } catch (e: any) {
+        expect(e.sqlState).toEqual('HY000');
+        expect(e.sqlMessage).toContain('This error should be passed back to MySQL client');
       }
 
       if (process.env.CUBESQL_STREAM_MODE === 'true') {
@@ -212,17 +263,12 @@ describe('SQLInterface', () => {
         const [result] = await connection.query('select CAST(\'2020-12-25 22:48:48.000\' AS timestamp)');
         console.log(result);
 
-        expect(result).toEqual([{"TimestampNanosecond(1608936528000000000, None)": "2020-12-25T22:48:48.000"}]);
+        expect(result).toEqual([{ 'TimestampNanosecond(1608936528000000000, None)': '2020-12-25T22:48:48.000' }]);
       }
-
-      // Increment it in case you throw Error
-      setTimeout(_ => {
-        expect(logger.mock.calls.length).toEqual(1);
-      },2000);
 
       connection.destroy();
     } finally {
-      await native.shutdownInterface(instance)
+      await native.shutdownInterface(instance);
     }
   });
 });

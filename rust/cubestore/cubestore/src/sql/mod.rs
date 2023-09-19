@@ -62,7 +62,7 @@ use crate::sql::parser::{
 use crate::store::ChunkDataStore;
 use crate::table::{data, Row, TableValue, TimestampValue};
 use crate::telemetry::incoming_traffic_agent_event;
-use crate::util::decimal::Decimal;
+use crate::util::decimal::{Decimal, Decimal96};
 use crate::util::strings::path_to_string;
 use crate::CubeError;
 use crate::{
@@ -396,15 +396,7 @@ impl SqlServiceImpl {
             None
         };
 
-        let has_streaming_locations = locations.as_ref().map_or(false, |locations| {
-            locations.iter().any(|l| Table::is_stream_location(l))
-        });
-
-        let trace_obj_to_save = if has_streaming_locations {
-            trace_obj.clone()
-        } else {
-            None
-        };
+        let trace_obj_to_save = trace_obj.clone();
 
         let source_columns = if let Some(source_table) = source_table {
             let mut parser = CubeStoreParser::new(&source_table)?;
@@ -622,6 +614,7 @@ impl SqlServiceImpl {
             .logical_plan(
                 DFStatement::Statement(Statement::Query(q)),
                 &InlineTables::new(),
+                None,
             )
             .await?;
 
@@ -691,7 +684,11 @@ impl SqlServiceImpl {
 
         let query_plan = self
             .query_planner
-            .logical_plan(DFStatement::Statement(statement), &InlineTables::new())
+            .logical_plan(
+                DFStatement::Statement(statement),
+                &InlineTables::new(),
+                None,
+            )
             .await?;
         let res = match query_plan {
             QueryPlan::Select(serialized, _) => {
@@ -884,6 +881,7 @@ impl SqlService for SqlServiceImpl {
                             indices: Vec::new(),
                             multi_part_subtree: HashMap::new(),
                         },
+                        None,
                     )
                     .await?;
                     if workers.len() == 0 {
@@ -1289,6 +1287,7 @@ impl SqlService for SqlServiceImpl {
                     .logical_plan(
                         DFStatement::Statement(Statement::Query(q)),
                         &context.inline_tables,
+                        context.trace_obj.clone(),
                     )
                     .await?;
                 // TODO distribute and combine
@@ -1373,6 +1372,7 @@ impl SqlService for SqlServiceImpl {
                     .logical_plan(
                         DFStatement::Statement(Statement::Query(q)),
                         &context.inline_tables,
+                        None,
                     )
                     .await?;
                 match logical_plan {
@@ -1408,7 +1408,7 @@ impl SqlService for SqlServiceImpl {
                                 .0,
                             worker: self
                                 .query_executor
-                                .worker_plan(worker_plan, mocked_names, chunk_ids_to_batches)
+                                .worker_plan(worker_plan, mocked_names, chunk_ids_to_batches, None)
                                 .await?
                                 .0,
                         });
@@ -1470,20 +1470,17 @@ fn convert_columns_type(columns: &Vec<ColumnDef>) -> Result<Vec<Column>, CubeErr
                 | DataType::Bytea
                 | DataType::Array(_) => ColumnType::Bytes,
                 DataType::Decimal(precision, scale) => {
-                    let mut precision = precision.unwrap_or(18);
-                    let mut scale = scale.unwrap_or(5);
+                    let (precision, scale) = proper_decimal_args(precision, scale);
                     if precision > 18 {
-                        precision = 18;
-                    }
-                    if scale > 5 {
-                        scale = 10;
-                    }
-                    if scale > precision {
-                        precision = scale;
-                    }
-                    ColumnType::Decimal {
-                        precision: precision as i32,
-                        scale: scale as i32,
+                        ColumnType::Decimal96 {
+                            precision: precision as i32,
+                            scale: scale as i32,
+                        }
+                    } else {
+                        ColumnType::Decimal {
+                            precision: precision as i32,
+                            scale: scale as i32,
+                        }
                     }
                 }
                 DataType::SmallInt | DataType::Int | DataType::BigInt | DataType::Interval => {
@@ -1496,6 +1493,11 @@ fn convert_columns_type(columns: &Vec<ColumnDef>) -> Result<Vec<Column>, CubeErr
                     let custom_type_name = custom.to_string().to_lowercase();
                     match custom_type_name.as_str() {
                         "tinyint" | "mediumint" => ColumnType::Int,
+                        "decimal96" => ColumnType::Decimal96 {
+                            scale: 5,
+                            precision: 27,
+                        },
+                        "int96" => ColumnType::Int96,
                         "bytes" => ColumnType::Bytes,
                         "varbinary" => ColumnType::Bytes,
                         "hyperloglog" => ColumnType::HyperLogLog(HllFlavour::Airlift),
@@ -1521,6 +1523,21 @@ fn convert_columns_type(columns: &Vec<ColumnDef>) -> Result<Vec<Column>, CubeErr
         rolupdb_columns.push(cube_col);
     }
     Ok(rolupdb_columns)
+}
+
+fn proper_decimal_args(precision: &Option<u64>, scale: &Option<u64>) -> (i32, i32) {
+    let mut precision = precision.unwrap_or(18);
+    let mut scale = scale.unwrap_or(5);
+    if precision > 27 {
+        precision = 27;
+    }
+    if scale > 5 {
+        scale = 10;
+    }
+    if scale > precision {
+        precision = scale;
+    }
+    (precision as i32, scale as i32)
 }
 
 fn parse_chunk(chunk: &[Vec<Expr>], column: &Vec<&Column>) -> Result<Vec<ArrayRef>, CubeError> {
@@ -1666,6 +1683,44 @@ fn extract_data<'a>(
             }
             builder.append_value(val_int.unwrap())?;
         }
+        ColumnType::Int96 => {
+            let builder = builder.as_any_mut().downcast_mut::<Int96Builder>().unwrap();
+            if is_null {
+                builder.append_null()?;
+                return Ok(());
+            }
+            let val_int = match cell {
+                Expr::Value(Value::Number(v, _)) | Expr::Value(Value::SingleQuotedString(v)) => {
+                    v.parse::<i128>()
+                }
+                Expr::UnaryOp {
+                    op: UnaryOperator::Minus,
+                    expr,
+                } => {
+                    if let Expr::Value(Value::Number(v, _)) = expr.as_ref() {
+                        v.parse::<i128>().map(|v| v * -1)
+                    } else {
+                        return Err(CubeError::user(format!(
+                            "Can't parse int96 from, {:?}",
+                            cell
+                        )));
+                    }
+                }
+                _ => {
+                    return Err(CubeError::user(format!(
+                        "Can't parse int96 from, {:?}",
+                        cell
+                    )))
+                }
+            };
+            if let Err(e) = val_int {
+                return Err(CubeError::user(format!(
+                    "Can't parse int96 from, {:?}: {}",
+                    cell, e
+                )));
+            }
+            builder.append_value(val_int.unwrap())?;
+        }
         t @ ColumnType::Decimal { .. } => {
             let scale = u8::try_from(t.target_scale()).unwrap();
             let d = match is_null {
@@ -1707,6 +1762,52 @@ fn extract_data<'a>(
                 10 => builder
                     .as_any_mut()
                     .downcast_mut::<Int64Decimal10Builder>()
+                    .unwrap()
+                    .append_option(d)?,
+                n => panic!("unhandled target scale: {}", n),
+            }
+        }
+        t @ ColumnType::Decimal96 { .. } => {
+            let scale = u8::try_from(t.target_scale()).unwrap();
+            let d = match is_null {
+                false => Some(parse_decimal_96(cell, scale)?),
+                true => None,
+            };
+            let d = d.map(|d| d.raw_value());
+            match scale {
+                0 => builder
+                    .as_any_mut()
+                    .downcast_mut::<Int96Decimal0Builder>()
+                    .unwrap()
+                    .append_option(d)?,
+                1 => builder
+                    .as_any_mut()
+                    .downcast_mut::<Int96Decimal1Builder>()
+                    .unwrap()
+                    .append_option(d)?,
+                2 => builder
+                    .as_any_mut()
+                    .downcast_mut::<Int96Decimal2Builder>()
+                    .unwrap()
+                    .append_option(d)?,
+                3 => builder
+                    .as_any_mut()
+                    .downcast_mut::<Int96Decimal3Builder>()
+                    .unwrap()
+                    .append_option(d)?,
+                4 => builder
+                    .as_any_mut()
+                    .downcast_mut::<Int96Decimal4Builder>()
+                    .unwrap()
+                    .append_option(d)?,
+                5 => builder
+                    .as_any_mut()
+                    .downcast_mut::<Int96Decimal5Builder>()
+                    .unwrap()
+                    .append_option(d)?,
+                10 => builder
+                    .as_any_mut()
+                    .downcast_mut::<Int96Decimal10Builder>()
                     .unwrap()
                     .append_option(d)?,
                 n => panic!("unhandled target scale: {}", n),
@@ -1863,6 +1964,21 @@ fn parse_decimal(cell: &Expr, scale: u8) -> Result<Decimal, CubeError> {
         ))),
     }
 }
+fn parse_decimal_96(cell: &Expr, scale: u8) -> Result<Decimal96, CubeError> {
+    match cell {
+        Expr::Value(Value::Number(v, _)) | Expr::Value(Value::SingleQuotedString(v)) => {
+            crate::import::parse_decimal_96(v, scale)
+        }
+        Expr::UnaryOp {
+            op: UnaryOperator::Minus,
+            expr: box Expr::Value(Value::Number(v, _)),
+        } => Ok(crate::import::parse_decimal_96(v, scale)?.negate()),
+        _ => Err(CubeError::user(format!(
+            "Can't parse decimal from, {:?}",
+            cell
+        ))),
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -1894,11 +2010,12 @@ mod tests {
 
     use super::*;
     use crate::cachestore::RocksCacheStore;
-    use crate::queryplanner::pretty_printers::pp_phys_plan;
+    use crate::queryplanner::pretty_printers::{pp_phys_plan, pp_phys_plan_ext, PPOptions};
     use crate::remotefs::queue::QueueRemoteFs;
     use crate::scheduler::SchedulerImpl;
     use crate::table::data::{cmp_min_rows, cmp_row_key_heap};
     use crate::table::TableValue;
+    use crate::util::int96::Int96;
     use regex::Regex;
 
     #[tokio::test]
@@ -2326,6 +2443,241 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn int96() {
+        Config::test("int96").update_config(|mut c| {
+            c.partition_split_threshold = 2;
+            c
+        }).start_test(async move |services| {
+            let service = services.sql_service;
+
+            let _ = service.exec_query("CREATE SCHEMA foo").await.unwrap();
+
+            let _ = service
+                .exec_query("CREATE TABLE foo.values (id int, value int96)")
+                .await
+                .unwrap();
+
+            service
+                .exec_query("INSERT INTO foo.values (id, value) VALUES (1, 10000000000000000000000), (2, 20000000000000000000000), (3, 10000000000000220000000), (4, 12000000000000000000024), (5, 123)")
+                .await
+                .unwrap();
+
+            let result = service
+                .exec_query("SELECT * from foo.values")
+                .await
+                .unwrap();
+
+            assert_eq!(result.get_rows()[0], Row::new(vec![TableValue::Int(1), TableValue::Int96(Int96::new(10000000000000000000000))]));
+            assert_eq!(result.get_rows()[1], Row::new(vec![TableValue::Int(2), TableValue::Int96(Int96::new(20000000000000000000000))]));
+            assert_eq!(result.get_rows()[2], Row::new(vec![TableValue::Int(3), TableValue::Int96(Int96::new(10000000000000220000000))]));
+            assert_eq!(result.get_rows()[3], Row::new(vec![TableValue::Int(4), TableValue::Int96(Int96::new(12000000000000000000024))]));
+            assert_eq!(result.get_rows()[4], Row::new(vec![TableValue::Int(5), TableValue::Int96(Int96::new(123))]));
+
+            let result = service
+                .exec_query("SELECT sum(value) from foo.values")
+                .await
+                .unwrap();
+
+            assert_eq!(result.get_rows()[0], Row::new(vec![TableValue::Int96(Int96::new(52000000000000220000147))]));
+
+            let result = service
+                .exec_query("SELECT max(value), min(value) from foo.values")
+                .await
+                .unwrap();
+
+            assert_eq!(result.get_rows()[0], Row::new(vec![TableValue::Int96(Int96::new(20000000000000000000000)), TableValue::Int96(Int96::new(123))]));
+
+            let result = service
+                .exec_query("SELECT value + 103, value + value, value = 12000000000000000000024 from foo.values where value = 12000000000000000000024")
+                .await
+                .unwrap();
+
+            assert_eq!(result.get_rows()[0], Row::new(vec![TableValue::Int96(Int96::new(12000000000000000000127)),
+            TableValue::Int96(Int96::new(2 * 12000000000000000000024)), TableValue::Boolean(true)]));
+
+            let result = service
+                .exec_query("SELECT value / 2, value * 2 from foo.values where value > 12000000000000000000024")
+                .await
+                .unwrap();
+
+            assert_eq!(result.get_rows()[0], Row::new(vec![TableValue::Int96(Int96::new(10000000000000000000000)),
+            TableValue::Int96(Int96::new(40000000000000000000000))]));
+
+            let result = service
+                .exec_query("SELECT * from foo.values order by value")
+                .await
+                .unwrap();
+
+            assert_eq!(result.get_rows()[0], Row::new(vec![TableValue::Int(5), TableValue::Int96(Int96::new(123))]));
+            assert_eq!(result.get_rows()[1], Row::new(vec![TableValue::Int(1), TableValue::Int96(Int96::new(10000000000000000000000))]));
+            assert_eq!(result.get_rows()[2], Row::new(vec![TableValue::Int(3), TableValue::Int96(Int96::new(10000000000000220000000))]));
+            assert_eq!(result.get_rows()[3], Row::new(vec![TableValue::Int(4), TableValue::Int96(Int96::new(12000000000000000000024))]));
+            assert_eq!(result.get_rows()[4], Row::new(vec![TableValue::Int(2), TableValue::Int96(Int96::new(20000000000000000000000))]));
+
+            let _ = service
+                .exec_query("CREATE TABLE foo.values2 (id int, value int96)")
+                .await
+                .unwrap();
+
+            service
+                .exec_query("INSERT INTO foo.values2 (id, value) VALUES (1, 10000000000000000000000), (2, 20000000000000000000000), (3, 10000000000000000000000), (4, 20000000000000000000000), (5, 123)")
+                .await
+                .unwrap();
+
+            let result = service
+                .exec_query("SELECT value, count(*) from foo.values2 group by value order by value")
+                .await
+                .unwrap();
+
+            assert_eq!(result.get_rows()[0], Row::new(vec![TableValue::Int96(Int96::new(123)), TableValue::Int(1)]));
+            assert_eq!(result.get_rows()[1], Row::new(vec![TableValue::Int96(Int96::new(10000000000000000000000)), TableValue::Int(2)]));
+            assert_eq!(result.get_rows()[2], Row::new(vec![TableValue::Int96(Int96::new(20000000000000000000000)), TableValue::Int(2)]));
+
+            let _ = service
+                .exec_query("CREATE TABLE foo.values3 (id int, value int96)")
+                .await
+                .unwrap();
+
+            service
+                .exec_query("INSERT INTO foo.values3 (id, value) VALUES (1, -10000000000000000000000), (2, -20000000000000000000000), (3, -10000000000000220000000), (4, -12000000000000000000024), (5, -123)")
+                .await
+                .unwrap();
+
+            let result = service
+                .exec_query("SELECT * from foo.values3")
+                .await
+                .unwrap();
+
+            assert_eq!(result.get_rows()[0], Row::new(vec![TableValue::Int(1), TableValue::Int96(Int96::new(-10000000000000000000000))]));
+            assert_eq!(result.get_rows()[1], Row::new(vec![TableValue::Int(2), TableValue::Int96(Int96::new(-20000000000000000000000))]));
+            assert_eq!(result.get_rows()[2], Row::new(vec![TableValue::Int(3), TableValue::Int96(Int96::new(-10000000000000220000000))]));
+            assert_eq!(result.get_rows()[3], Row::new(vec![TableValue::Int(4), TableValue::Int96(Int96::new(-12000000000000000000024))]));
+            assert_eq!(result.get_rows()[4], Row::new(vec![TableValue::Int(5), TableValue::Int96(Int96::new(-123))]));
+
+        })
+            .await;
+    }
+
+    #[tokio::test]
+    async fn decimal96() {
+        Config::test("decimal96").update_config(|mut c| {
+            c.partition_split_threshold = 2;
+            c
+        }).start_test(async move |services| {
+            let service = services.sql_service;
+
+            let _ = service.exec_query("CREATE SCHEMA foo").await.unwrap();
+
+            let _ = service
+                .exec_query("CREATE TABLE foo.values (id int, value decimal96)")
+                .await
+                .unwrap();
+
+            service
+                .exec_query("INSERT INTO foo.values (id, value) VALUES (1, 100000000000000000000.10), (2, 200000000000000000000), (3, 100000000000002200000.01), (4, 120000000000000000.10024), (5, 1.23)")
+                .await
+                .unwrap();
+
+            let result = service
+                .exec_query("SELECT * from foo.values")
+                .await
+                .unwrap();
+
+            assert_eq!(result.get_rows()[0], Row::new(vec![TableValue::Int(1), TableValue::Decimal96(Decimal96::new(10000000000000000000010000))]));
+            assert_eq!(result.get_rows()[1], Row::new(vec![TableValue::Int(2), TableValue::Decimal96(Decimal96::new(20000000000000000000000000))]));
+            assert_eq!(result.get_rows()[2], Row::new(vec![TableValue::Int(3), TableValue::Decimal96(Decimal96::new(10000000000000220000001000))]));
+            assert_eq!(result.get_rows()[3], Row::new(vec![TableValue::Int(4), TableValue::Decimal96(Decimal96::new(12000000000000000010024))]));
+            assert_eq!(result.get_rows()[4], Row::new(vec![TableValue::Int(5), TableValue::Decimal96(Decimal96::new(123000))]));
+
+            let result = service
+                .exec_query("SELECT sum(value) from foo.values")
+                .await
+                .unwrap();
+
+
+            assert_eq!(result.get_rows()[0], Row::new(vec![TableValue::Decimal96(Decimal96::new(40012000000000220000144024))]));
+
+            let result = service
+                .exec_query("SELECT max(value), min(value) from foo.values")
+                .await
+                .unwrap();
+
+            assert_eq!(result.get_rows()[0], Row::new(vec![TableValue::Decimal96(Decimal96::new(20000000000000000000000000)), TableValue::Decimal96(Decimal96::new(123000))]));
+
+            let result = service
+                .exec_query("SELECT value + 10.103, value + value from foo.values where id = 4")
+                .await
+                .unwrap();
+
+
+            assert_eq!(result.get_rows()[0], Row::new(vec![TableValue::Decimal96(Decimal96::new(12000000000000001020324)),
+            TableValue::Decimal96(Decimal96::new(2 * 12000000000000000010024))]));
+
+           let result = service
+                .exec_query("SELECT value / 2, value * 2 from foo.values where value > 100000000000002200000")
+                .await
+                .unwrap();
+
+            assert_eq!(result.get_rows()[0], Row::new(vec![TableValue::Float(1.0000000000000002e20.into()),
+            TableValue::Float(4.0000000000000007e20.into())]));
+
+           let result = service
+                .exec_query("SELECT * from foo.values order by value")
+                .await
+                .unwrap();
+
+            assert_eq!(result.get_rows()[0], Row::new(vec![TableValue::Int(5), TableValue::Decimal96(Decimal96::new(123000))]));
+            assert_eq!(result.get_rows()[1], Row::new(vec![TableValue::Int(4), TableValue::Decimal96(Decimal96::new(12000000000000000010024))]));
+            assert_eq!(result.get_rows()[2], Row::new(vec![TableValue::Int(1), TableValue::Decimal96(Decimal96::new(10000000000000000000010000))]));
+            assert_eq!(result.get_rows()[3], Row::new(vec![TableValue::Int(3), TableValue::Decimal96(Decimal96::new(10000000000000220000001000))]));
+            assert_eq!(result.get_rows()[4], Row::new(vec![TableValue::Int(2), TableValue::Decimal96(Decimal96::new(20000000000000000000000000))]));
+
+              let _ = service
+                .exec_query("CREATE TABLE foo.values2 (id int, value decimal(27, 2))")
+                .await
+                .unwrap();
+
+            service
+                .exec_query("INSERT INTO foo.values2 (id, value) VALUES (1, 100000000000000000000.10), (2, 20000000000000000000000.1), (3, 100000000000000000000.10), (4, 20000000000000000000000.1), (5, 123)")
+                .await
+                .unwrap();
+
+            let result = service
+                .exec_query("SELECT value, count(*) from foo.values2 group by value order by value")
+                .await
+                .unwrap();
+
+            assert_eq!(result.get_rows()[0], Row::new(vec![TableValue::Decimal96(Decimal96::new(12300)), TableValue::Int(1)]));
+            assert_eq!(result.get_rows()[1], Row::new(vec![TableValue::Decimal96(Decimal96::new(10000000000000000000010)), TableValue::Int(2)]));
+            assert_eq!(result.get_rows()[2], Row::new(vec![TableValue::Decimal96(Decimal96::new(2000000000000000000000010)), TableValue::Int(2)]));
+
+
+            let _ = service
+                .exec_query("CREATE TABLE foo.values3 (id int, value decimal96)")
+                .await
+                .unwrap();
+
+            service
+                .exec_query("INSERT INTO foo.values3 (id, value) VALUES (1, -100000000000000000000.10), (2, -200000000000000000000), (3, -100000000000002200000.01), (4, -120000000000000000.10024), (5, -1.23)")
+                .await
+                .unwrap();
+
+            let result = service
+                .exec_query("SELECT * from foo.values3")
+                .await
+                .unwrap();
+
+            assert_eq!(result.get_rows()[0], Row::new(vec![TableValue::Int(1), TableValue::Decimal96(Decimal96::new(-10000000000000000000010000))]));
+            assert_eq!(result.get_rows()[1], Row::new(vec![TableValue::Int(2), TableValue::Decimal96(Decimal96::new(-20000000000000000000000000))]));
+            assert_eq!(result.get_rows()[2], Row::new(vec![TableValue::Int(3), TableValue::Decimal96(Decimal96::new(-10000000000000220000001000))]));
+            assert_eq!(result.get_rows()[3], Row::new(vec![TableValue::Int(4), TableValue::Decimal96(Decimal96::new(-12000000000000000010024))]));
+            assert_eq!(result.get_rows()[4], Row::new(vec![TableValue::Int(5), TableValue::Decimal96(Decimal96::new(-123000))]));
+
+        })
+            .await;
+    }
+
+    #[tokio::test]
     async fn over_2k_booleans() {
         Config::test("over_2k_booleans").update_config(|mut c| {
             c.partition_split_threshold = 1000000;
@@ -2742,6 +3094,62 @@ mod tests {
                     "{}\nshould have 2 and less partition scan nodes",
                     worker_plan
                 );
+            })
+            .await;
+    }
+
+    #[tokio::test]
+    async fn check_memory_test() {
+        Config::test("check_memory_test")
+            .update_config(|mut c| {
+                c.partition_split_threshold = 25;
+                c.compaction_chunks_count_threshold = 0;
+                c
+            })
+            .start_test(async move |services| {
+                let service = services.sql_service;
+
+                service.exec_query("CREATE SCHEMA foo").await.unwrap();
+
+                service
+                    .exec_query("CREATE TABLE foo.numbers (num decimal)")
+                    .await
+                    .unwrap();
+
+                for _ in 0..2 {
+                    let t = (0..100).map(|i| format!("({i})")).join(", ");
+                    service
+                        .exec_query(&format!("INSERT INTO foo.numbers (num) VALUES {}", t))
+                        .await
+                        .unwrap();
+                }
+
+                let mut opts = PPOptions::default();
+                opts.show_check_memory_nodes = true;
+
+                let plans = service
+                    .plan_query("SELECT sum(num) from foo.numbers where num = 50")
+                    .await
+                    .unwrap();
+                let plan_regexp = Regex::new(r"ParquetScan.*\.parquet").unwrap();
+
+                let expected = "Projection, [SUM(foo.numbers.num)@0:SUM(num)]\
+                \n  FinalHashAggregate\
+                \n    Worker\
+                \n      PartialHashAggregate\
+                \n        Filter\
+                \n          MergeSort\
+                \n            Scan, index: default:1:[1]:sort_on[num], fields: *\
+                \n              FilterByKeyRange\
+                \n                CheckMemoryExec\
+                \n                  ParquetScan\
+                \n              FilterByKeyRange\
+                \n                CheckMemoryExec\
+                \n                  ParquetScan";
+                let plan = pp_phys_plan_ext(plans.worker.as_ref(), &opts);
+                let p = plan_regexp.replace_all(&plan, "ParquetScan");
+                println!("pp {}", p);
+                assert_eq!(p, expected);
             })
             .await;
     }
@@ -3634,8 +4042,14 @@ mod tests {
         }).await;
     }
 
-    #[tokio::test]
-    async fn create_table_with_temp_file() {
+    #[test]
+    fn create_table_with_temp_file() {
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .thread_stack_size(4 * 1024 * 1024)
+            .build()
+            .unwrap()
+            .block_on( async {
         Config::run_test("create_table_with_temp_file", async move |services| {
             let service = services.sql_service;
 
@@ -3675,6 +4089,9 @@ mod tests {
             let result = service.exec_query("SELECT count(*) as cnt from Foo.Persons WHERE arr = '[\"Foo\",\"Bar\",\"FooBar\"]' or arr = '[\"\"]' or arr is null").await.unwrap();
             assert_eq!(result.get_rows(), &vec![Row::new(vec![TableValue::Int(5)])]);
         }).await;
+
+            }
+            )
     }
 
     #[tokio::test]
@@ -4036,6 +4453,122 @@ mod tests {
             assert!(trace_obj.is_none());
 
         }).await;
+    }
+
+    #[tokio::test]
+    async fn total_count_over_groupping() {
+        Config::test("total_count_over_groupping")
+            .start_test(async move |services| {
+                let service = services.sql_service;
+
+                let _ = service.exec_query("CREATE SCHEMA test").await.unwrap();
+
+                service
+                    .exec_query("CREATE TABLE test.test (id int, created timestamp, value int)")
+                    .await
+                    .unwrap();
+                service
+                    .exec_query("CREATE TABLE test.test1 (id int, created timestamp, value int)")
+                    .await
+                    .unwrap();
+
+                service
+                    .exec_query(
+                        "INSERT INTO test.test (id, created, value) values \
+                            (1, '2022-01-01T00:00:00Z', 1),\
+                            (2, '2022-01-02T00:00:00Z', 1),\
+                            (1, '2022-02-03T00:00:00Z', 1),\
+                            (2, '2022-02-03T00:00:00Z', 2),\
+                            (2, '2022-01-02T00:00:00Z', 1)\
+                            ",
+                    )
+                    .await
+                    .unwrap();
+                service
+                    .exec_query(
+                        "INSERT INTO test.test1 (id, created, value) values \
+                            (1, '2022-01-01T00:00:00Z', 1),\
+                            (2, '2022-01-02T00:00:00Z', 1),\
+                            (1, '2022-02-03T00:00:00Z', 1),\
+                            (2, '2022-02-03T00:00:00Z', 2),\
+                            (2, '2022-01-02T00:00:00Z', 1)\
+                            ",
+                    )
+                    .await
+                    .unwrap();
+                let res = service
+                    .exec_query(
+                        "SELECT count(*) cnt FROM \
+                                (\
+                                 SELECT \
+                                 date_trunc('month', created) as month,
+                                 sum(value) as v
+                                 from test.test
+                                 group by 1
+                                 order by 2
+                                 ) tmp",
+                    )
+                    .await
+                    .unwrap();
+                assert_eq!(res.get_rows(), &vec![Row::new(vec![TableValue::Int(2)])]);
+
+                let res = service
+                    .exec_query(
+                        "SELECT count(*) cnt FROM \
+                                (\
+                                 SELECT \
+                                 created as month,
+                                 sum(value) as v
+                                 from test.test
+                                 group by 1
+                                 order by 2
+                                 ) tmp",
+                    )
+                    .await
+                    .unwrap();
+                assert_eq!(res.get_rows(), &vec![Row::new(vec![TableValue::Int(3)])]);
+
+                let res = service
+                    .exec_query(
+                        "SELECT count(*) cnt FROM \
+                        (\
+                        SELECT \
+                        id id,
+                        created created,
+                        sum(value) value
+                        from (
+                            select * from test.test
+                            union all 
+                            select * from test.test1
+                            )
+                        group by 1, 2
+                        ) tmp",
+                    )
+                    .await
+                    .unwrap();
+                assert_eq!(res.get_rows(), &vec![Row::new(vec![TableValue::Int(4)])]);
+
+                let res = service
+                    .exec_query(
+                        "SELECT count(*) cnt FROM \
+                                (\
+                                 SELECT \
+                                 id id,
+                                 date_trunc('month', created) as month,
+                                 sum(value) as v,
+                                 sum(id)
+                                 from test.test
+                                 group by 1, 2
+                                 order by 1, 2
+                                 ) tmp",
+                    )
+                    .await
+                    .unwrap();
+                assert_eq!(res.get_rows(), &vec![Row::new(vec![TableValue::Int(4)])]);
+            })
+            .await;
+
+        //assert_eq!(res.get_rows(), &vec![Row::new(vec![TableValue::Int(2)])]);
     }
 }
 

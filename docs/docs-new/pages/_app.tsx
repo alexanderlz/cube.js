@@ -4,12 +4,21 @@ import "@/styles/globals.css";
 import "@/styles/palette.css";
 import "@/styles/typography.css";
 import "@/styles/math.css";
+import "@/styles/images.css";
 import "katex/dist/katex.min.css";
 import "@cube-dev/marketing-ui/dist/index.css";
 
 import localFont from "next/font/local";
 import { Inter } from "next/font/google";
 import { SearchProvider } from "@cube-dev/marketing-ui";
+import { useRouter } from 'next/router';
+import { useEffect } from 'react';
+
+export const SourceCodePro = localFont({
+  src: "../fonts/SourceCodePro-Regular.woff2",
+  weight: "400",
+  style: "normal",
+});
 
 export const JetBrainsMono = localFont({
   src: "../fonts/JetBrainsMono-Regular.woff2",
@@ -52,39 +61,42 @@ export const CeraPro = localFont({
   ],
 });
 
-export default function MyApp({ Component, pageProps }: AppProps) {
+type Props = { origin: string | null };
+
+export default function MyApp({ origin, Component, pageProps }: AppProps & Props) {
+  const router = useRouter()
+
+  // Track page views
+  useEffect(() => {
+    const handleRouteChange = async (url) => {
+      if (typeof window !== 'undefined') {
+        const { page } = await import('cubedev-tracking');
+        page();
+      }
+    }
+
+    router.events.on('routeChangeStart', handleRouteChange)
+
+    // If the component is unmounted, unsubscribe
+    // from the event with the `off` method:
+    return () => {
+      router.events.off('routeChangeStart', handleRouteChange)
+    }
+  }, [router])
+
   return (
     <SearchProvider
       algoliaAppId={process.env.NEXT_PUBLIC_ALGOLIA_APP_ID}
       algoliaApiKey={process.env.NEXT_PUBLIC_ALGOLIA_API_KEY}
       algoliaIndexName={process.env.NEXT_PUBLIC_ALGOLIA_INDEX_NAME}
-      baseUrl="/"
     >
       <style jsx global>{`
         :root {
           --font: ${inter.style.fontFamily};
-          --font-creapro: ${CeraPro.style.fontFamily};
+          --font-title: ${CeraPro.style.fontFamily};
           --font-mono: ${JetBrainsMono.style.fontFamily};
+          --font-code: ${SourceCodePro.style.fontFamily};
           --cube-font: ${CeraPro.style.fontFamily};
-        }
-
-        body {
-        }
-
-        h1,
-        h2,
-        h3,
-        h4,
-        h5,
-        h6 {
-          font-family: ${CeraPro.style.fontFamily};
-        }
-
-        code,
-        kbd,
-        samp,
-        pre {
-          font-family: var(--font-mono);
         }
       `}</style>
       <Component {...pageProps} />

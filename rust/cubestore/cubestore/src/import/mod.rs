@@ -31,13 +31,16 @@ use crate::import::limits::ConcurrencyLimits;
 use crate::metastore::table::Table;
 use crate::metastore::{is_valid_plain_binary_hll, HllFlavour, IdRow};
 use crate::metastore::{Column, ColumnType, ImportFormat, MetaStore};
+use crate::queryplanner::trace_data_loaded::DataLoadedSize;
 use crate::remotefs::RemoteFs;
 use crate::sql::timestamp_from_string;
 use crate::store::ChunkDataStore;
 use crate::streaming::StreamingService;
 use crate::table::data::{append_row, create_array_builders};
 use crate::table::{Row, TableValue};
-use crate::util::decimal::Decimal;
+use crate::util::batch_memory::columns_vec_buffer_size;
+use crate::util::decimal::{Decimal, Decimal96};
+use crate::util::int96::Int96;
 use crate::util::maybe_owned::MaybeOwnedStr;
 use crate::CubeError;
 use datafusion::cube_ext::ordfloat::OrdF64;
@@ -132,7 +135,7 @@ impl ImportFormat {
                         let value_buf = parser.next_value()?;
                         let value = value_buf.as_ref();
 
-                        if value == "" || value == "\\N" {
+                        if value == "" || value == "\\N" || value == "\\\\N" {
                             row[*insert_pos] = TableValue::Null;
                         } else {
                             let mut value_buf_opt = Some(value_buf);
@@ -180,7 +183,15 @@ impl ImportFormat {
                 .parse()
                 .map(|v| TableValue::Int(v))
                 .unwrap_or(TableValue::Null),
+            ColumnType::Int96 => value
+                .parse()
+                .map(|v| TableValue::Int96(Int96::new(v)))
+                .unwrap_or(TableValue::Null),
             t @ ColumnType::Decimal { .. } => TableValue::Decimal(parse_decimal(
+                value,
+                u8::try_from(t.target_scale()).unwrap(),
+            )?),
+            t @ ColumnType::Decimal96 { .. } => TableValue::Decimal96(parse_decimal_96(
                 value,
                 u8::try_from(t.target_scale()).unwrap(),
             )?),
@@ -226,6 +237,26 @@ pub(crate) fn parse_decimal(value: &str, scale: u8) -> Result<Decimal, CubeError
         }
     };
     Ok(Decimal::new(raw_value))
+}
+
+pub(crate) fn parse_decimal_96(value: &str, scale: u8) -> Result<Decimal96, CubeError> {
+    // TODO: parse into Decimal directly.
+    let bd = BigDecimal::from_str_radix(value, 10)?;
+    let raw_value = match bd
+        .with_scale(scale as i64)
+        .into_bigint_and_exponent()
+        .0
+        .to_i128()
+    {
+        Some(d) => d,
+        None => {
+            return Err(CubeError::user(format!(
+                "cannot represent '{}' with scale {} without loosing precision",
+                value, scale
+            )))
+        }
+    };
+    Ok(Decimal96::new(raw_value))
 }
 
 fn decode_byte(s: &str) -> Option<u8> {
@@ -442,7 +473,12 @@ impl<R: AsyncBufRead> Stream for CsvLineStream<R> {
 #[async_trait]
 pub trait ImportService: DIService + Send + Sync {
     async fn import_table(&self, table_id: u64) -> Result<(), CubeError>;
-    async fn import_table_part(&self, table_id: u64, location: &str) -> Result<(), CubeError>;
+    async fn import_table_part(
+        &self,
+        table_id: u64,
+        location: &str,
+        data_loaded_size: Option<Arc<DataLoadedSize>>,
+    ) -> Result<(), CubeError>;
     async fn validate_table_location(&self, table_id: u64, location: &str)
         -> Result<(), CubeError>;
     async fn estimate_location_row_count(&self, location: &str) -> Result<u64, CubeError>;
@@ -609,6 +645,7 @@ impl ImportServiceImpl {
         table: &IdRow<Table>,
         format: ImportFormat,
         location: &str,
+        data_loaded_size: Option<Arc<DataLoadedSize>>,
     ) -> Result<(), CubeError> {
         let temp_dir = self.config_obj.data_dir().join("tmp");
         tokio::fs::create_dir_all(temp_dir.clone())
@@ -656,7 +693,13 @@ impl ImportServiceImpl {
                     mem::swap(&mut builders, &mut to_add);
                     num_rows = 0;
 
-                    ingestion.queue_data_frame(finish(to_add)).await?;
+                    let builded_rows = finish(to_add);
+
+                    if let Some(data_loaded_size) = &data_loaded_size {
+                        data_loaded_size.add(columns_vec_buffer_size(&builded_rows));
+                    }
+
+                    ingestion.queue_data_frame(builded_rows).await?;
                 }
             }
         }
@@ -702,7 +745,7 @@ impl ImportService for ImportServiceImpl {
                 table
             )))?;
         for location in locations.iter() {
-            self.do_import(&table, *format, location).await?;
+            self.do_import(&table, *format, location, None).await?;
         }
 
         for location in locations.iter() {
@@ -712,7 +755,12 @@ impl ImportService for ImportServiceImpl {
         Ok(())
     }
 
-    async fn import_table_part(&self, table_id: u64, location: &str) -> Result<(), CubeError> {
+    async fn import_table_part(
+        &self,
+        table_id: u64,
+        location: &str,
+        data_loaded_size: Option<Arc<DataLoadedSize>>,
+    ) -> Result<(), CubeError> {
         let table = self.meta_store.get_table_by_id(table_id).await?;
         let format = table
             .get_row()
@@ -739,7 +787,8 @@ impl ImportService for ImportServiceImpl {
         if Table::is_stream_location(location) {
             self.streaming_service.stream_table(table, location).await?;
         } else {
-            self.do_import(&table, *format, location).await?;
+            self.do_import(&table, *format, location, data_loaded_size.clone())
+                .await?;
             self.drop_temp_uploads(&location).await?;
         }
 

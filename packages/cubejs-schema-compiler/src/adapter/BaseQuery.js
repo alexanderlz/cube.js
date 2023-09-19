@@ -186,7 +186,7 @@ class BaseQuery {
      * @protected
      * @type {ParamAllocator}
      */
-    this.paramAllocator = this.options.paramAllocator || this.newParamAllocator();
+    this.paramAllocator = this.options.paramAllocator || this.newParamAllocator(this.options.expressionParams);
     this.compilerCache = this.compilers.compiler.compilerCache;
     this.queryCache = this.compilerCache.getQueryCache({
       measures: this.options.measures,
@@ -207,7 +207,10 @@ class BaseQuery {
       useOriginalSqlPreAggregationsInPreAggregation: this.options.useOriginalSqlPreAggregationsInPreAggregation,
       cubeLatticeCache: this.options.cubeLatticeCache, // TODO too heavy for key
       historyQueries: this.options.historyQueries, // TODO too heavy for key
-      ungrouped: this.options.ungrouped
+      ungrouped: this.options.ungrouped,
+      memberToAlias: this.options.memberToAlias,
+      expressionParams: this.options.expressionParams,
+      convertTzForRawTimeDimension: this.options.convertTzForRawTimeDimension,
     });
     this.timezone = this.options.timezone;
     this.rowLimit = this.options.rowLimit;
@@ -432,8 +435,8 @@ class BaseQuery {
     return new BaseTimeDimension(this, timeDimension);
   }
 
-  newParamAllocator() {
-    return new ParamAllocator();
+  newParamAllocator(expressionParams) {
+    return new ParamAllocator(expressionParams);
   }
 
   newPreAggregations() {
@@ -544,21 +547,23 @@ class BaseQuery {
 
   /**
    * Returns an array of SQL query strings for the query.
+   * @param {boolean} [exportAnnotatedSql] - returns annotated sql with not rendered params if true
    * @returns {Array<string>}
    */
-  buildSqlAndParams() {
+  buildSqlAndParams(exportAnnotatedSql) {
     if (!this.options.preAggregationQuery && this.externalQueryClass) {
       if (this.externalPreAggregationQuery()) { // TODO performance
-        return this.externalQuery().buildSqlAndParams();
+        return this.externalQuery().buildSqlAndParams(exportAnnotatedSql);
       }
     }
 
     return this.compilers.compiler.withQuery(
       this,
       () => this.cacheValue(
-        ['buildSqlAndParams'],
+        ['buildSqlAndParams', exportAnnotatedSql],
         () => this.paramAllocator.buildSqlAndParams(
-          this.buildParamAnnotatedSql()
+          this.buildParamAnnotatedSql(),
+          exportAnnotatedSql
         ),
         { cache: this.queryCache }
       )
@@ -1099,7 +1104,7 @@ class BaseQuery {
         'collectMultipliedMeasures',
         this.queryCache
       );
-      if (m.expressionName && !collectedMeasures.length) {
+      if (m.expressionName && !collectedMeasures.length && !m.isMemberExpression) {
         throw new UserError(`Subquery dimension ${m.expressionName} should reference at least one measure`);
       }
       return [m.measure, collectedMeasures];
@@ -1538,7 +1543,7 @@ class BaseQuery {
     let index;
 
     index = this.dimensionsForSelect().findIndex(
-      d => equalIgnoreCase(d.dimension, id)
+      d => equalIgnoreCase(d.dimension, id) || equalIgnoreCase(d.expressionName, id)
     );
 
     if (index > -1) {
@@ -1707,17 +1712,29 @@ class BaseQuery {
     return this.evaluateSymbolContext || {};
   }
 
-  evaluateSymbolSql(cubeName, name, symbol) {
-    this.pushMemberNameForCollectionIfNecessary(cubeName, name);
+  evaluateSymbolSql(cubeName, name, symbol, memberExpressionType) {
+    if (!memberExpressionType) {
+      this.pushMemberNameForCollectionIfNecessary(cubeName, name);
+    }
     const memberPathArray = [cubeName, name];
     const memberPath = this.cubeEvaluator.pathFromArray(memberPathArray);
-    if (this.cubeEvaluator.isMeasure(memberPathArray)) {
+    let type = memberExpressionType;
+    if (!type && this.cubeEvaluator.isMeasure(memberPathArray)) {
+      type = 'measure';
+    }
+    if (!type && this.cubeEvaluator.isDimension(memberPathArray)) {
+      type = 'dimension';
+    }
+    if (!type && this.cubeEvaluator.isSegment(memberPathArray)) {
+      type = 'segment';
+    }
+    if (type === 'measure') {
       let parentMeasure;
       if (this.safeEvaluateSymbolContext().compositeCubeMeasures ||
         this.safeEvaluateSymbolContext().leafMeasures) {
         parentMeasure = this.safeEvaluateSymbolContext().currentMeasure;
         if (this.safeEvaluateSymbolContext().compositeCubeMeasures) {
-          if (parentMeasure &&
+          if (parentMeasure && !memberExpressionType &&
             (
               this.cubeEvaluator.cubeNameFromPath(parentMeasure) !== cubeName ||
               this.newMeasure(this.cubeEvaluator.pathFromArray(memberPathArray)).isCumulative()
@@ -1761,7 +1778,7 @@ class BaseQuery {
         this.safeEvaluateSymbolContext().currentMeasure = parentMeasure;
       }
       return result;
-    } else if (this.cubeEvaluator.isDimension(memberPathArray)) {
+    } else if (type === 'dimension') {
       if ((this.safeEvaluateSymbolContext().renderedReference || {})[memberPath]) {
         return this.evaluateSymbolContext.renderedReference[memberPath];
       }
@@ -1780,9 +1797,17 @@ class BaseQuery {
           this.autoPrefixAndEvaluateSql(cubeName, symbol.longitude.sql)
         ]);
       } else {
-        return this.autoPrefixAndEvaluateSql(cubeName, symbol.sql);
+        let res = this.autoPrefixAndEvaluateSql(cubeName, symbol.sql);
+        if (this.safeEvaluateSymbolContext().convertTzForRawTimeDimension &&
+          !memberExpressionType &&
+          symbol.type === 'time' &&
+          this.cubeEvaluator.byPathAnyType(memberPathArray).ownedByCube
+        ) {
+          res = this.convertTz(res);
+        }
+        return res;
       }
-    } else if (this.cubeEvaluator.isSegment(memberPathArray)) {
+    } else if (type === 'segment') {
       if ((this.safeEvaluateSymbolContext().renderedReference || {})[memberPath]) {
         return this.evaluateSymbolContext.renderedReference[memberPath];
       }
@@ -2158,6 +2183,9 @@ class BaseQuery {
    * @returns {string}
    */
   aliasName(name, isPreAggregationName) {
+    if (this.options.memberToAlias && this.options.memberToAlias[name]) {
+      return this.options.memberToAlias[name];
+    }
     const path = name.split('.');
     if (path[0] && this.cubeEvaluator.cubeExists(path[0]) && this.cubeEvaluator.cubeFromPath(path[0]).sqlAlias) {
       const cubeName = path[0];
@@ -2378,6 +2406,47 @@ class BaseQuery {
 
   preAggregationAllowUngroupingWithPrimaryKey(_cube, _preAggregation) {
     return false;
+  }
+
+  /**
+   * @public
+   * @returns {any}
+   */
+  sqlTemplates() {
+    return {
+      functions: {
+        SUM: 'SUM({{ args_concat }})',
+        MIN: 'MIN({{ args_concat }})',
+        MAX: 'MAX({{ args_concat }})',
+        COUNT: 'COUNT({{ args_concat }})',
+        COUNT_DISTINCT: 'COUNT(DISTINCT {{ args_concat }})',
+        AVG: 'AVG({{ args_concat }})',
+
+        COALESCE: 'COALESCE({{ args_concat }})',
+        CONCAT: 'CONCAT({{ args_concat }})',
+      },
+      statements: {
+        select: 'SELECT {{ select_concat | map(attribute=\'aliased\') | join(\', \') }} \n' +
+          'FROM (\n  {{ from }}\n) AS {{ from_alias }} \n' +
+          '{% if group_by %} GROUP BY {{ group_by | map(attribute=\'index\') | join(\', \') }}{% endif %}' +
+          '{% if order_by %} ORDER BY {{ order_by | map(attribute=\'expr\') | join(\', \') }}{% endif %}' +
+          '{% if limit %}\nLIMIT {{ limit }}{% endif %}' +
+          '{% if offset %}\nOFFSET {{ offset }}{% endif %}',
+      },
+      expressions: {
+        column_aliased: '{{expr}} {{quoted_alias}}',
+        case: 'CASE {% if expr %}{{ expr }} {% endif %}{% for when, then in when_then %}WHEN {{ when }} THEN {{ then }}{% endfor %}{% if else_expr %} ELSE {{ else_expr }}{% endif %} END',
+        binary: '{{ left }} {{ op }} {{ right }}',
+        sort: '{{ expr }} {% if asc %}ASC{% else %}DESC{% endif %}{% if nulls_first %} NULLS FIRST{% endif %}',
+      },
+      quotes: {
+        identifiers: '"',
+        escape: '""'
+      },
+      params: {
+        param: '?'
+      }
+    };
   }
 
   // eslint-disable-next-line consistent-return

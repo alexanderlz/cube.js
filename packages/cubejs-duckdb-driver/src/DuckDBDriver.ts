@@ -4,7 +4,7 @@ import {
   StreamOptions,
   QueryOptions, StreamTableData,
 } from '@cubejs-backend/base-driver';
-import { assertDataSource, getEnv } from '@cubejs-backend/shared';
+import { getEnv } from '@cubejs-backend/shared';
 import { promisify } from 'util';
 import * as stream from 'stream';
 // eslint-disable-next-line import/no-extraneous-dependencies
@@ -15,49 +15,95 @@ import { HydrationStream, transformRow } from './HydrationStream';
 
 export type DuckDBDriverConfiguration = {
   dataSource?: string,
-  enableHttpFs?: boolean,
   initSql?: string,
 };
 
-export class DuckDBDriver extends BaseDriver implements DriverInterface {
-  protected readonly config: DuckDBDriverConfiguration;
+type InitPromise = {
+  connection: Connection,
+  db: Database;
+};
 
-  protected initPromise: Promise<Database> | null = null;
+export class DuckDBDriver extends BaseDriver implements DriverInterface {
+  protected initPromise: Promise<InitPromise> | null = null;
 
   public constructor(
-    config: DuckDBDriverConfiguration,
+    protected readonly config: DuckDBDriverConfiguration = {},
   ) {
     super();
-
-    const dataSource =
-      config.dataSource ||
-      assertDataSource('default');
-
-    this.config = {
-      enableHttpFs: getEnv('duckdbHttpFs', { dataSource }) || true,
-      ...config,
-    };
   }
 
-  protected async initDatabase(): Promise<Database> {
-    const db = new Database(':memory:');
-    const conn = db.connect();
+  protected async init(): Promise<InitPromise> {
+    const token = getEnv('duckdbMotherDuckToken', this.config);
+    
+    const db = new Database(token ? `md:?motherduck_token=${token}` : ':memory:');
+    const connection = db.connect();
+    
+    try {
+      await this.handleQuery(connection, 'INSTALL httpfs', []);
+    } catch (e) {
+      if (this.logger) {
+        console.error('DuckDB - error on httpfs installation', {
+          e
+        });
+      }
 
-    if (this.config.enableHttpFs) {
-      try {
-        await this.handleQuery(conn, 'INSTALL httpfs', []);
-      } catch (e) {
-        if (this.logger) {
-          console.error('DuckDB - error on httpfs installation', {
-            e
-          });
+      // DuckDB will lose connection_ref on connection on error, this will lead to broken connection object
+      throw e;
+    }
+
+    try {
+      await this.handleQuery(connection, 'LOAD httpfs', []);
+    } catch (e) {
+      if (this.logger) {
+        console.error('DuckDB - error on loading httpfs', {
+          e
+        });
+      }
+
+      // DuckDB will lose connection_ref on connection on error, this will lead to broken connection object
+      throw e;
+    }
+
+    const configuration = [
+      {
+        key: 's3_region',
+        value: getEnv('duckdbS3Region', this.config),
+      },
+      {
+        key: 's3_endpoint',
+        value: getEnv('duckdbS3Endpoint', this.config),
+      },
+      {
+        key: 's3_access_key_id',
+        value: getEnv('duckdbS3AccessKeyId', this.config),
+      },
+      {
+        key: 's3_secret_access_key',
+        value: getEnv('duckdbS3SecretAccessKeyId', this.config),
+      },
+      {
+        key: 'memory_limit',
+        value: getEnv('duckdbMemoryLimit', this.config),
+      },
+    ];
+    
+    for (const { key, value } of configuration) {
+      if (value) {
+        try {
+          await this.handleQuery(connection, `SET ${key}='${value}'`, []);
+        } catch (e) {
+          if (this.logger) {
+            console.error(`DuckDB - error on configuration, key: ${key}`, {
+              e
+            });
+          }
         }
       }
     }
 
     if (this.config.initSql) {
       try {
-        await this.handleQuery(conn, this.config.initSql, []);
+        await this.handleQuery(connection, this.config.initSql, []);
       } catch (e) {
         if (this.logger) {
           console.error('DuckDB - error on init sql (skipping)', {
@@ -66,18 +112,21 @@ export class DuckDBDriver extends BaseDriver implements DriverInterface {
         }
       }
     }
-
-    return db;
+    
+    return {
+      connection,
+      db
+    };
   }
 
-  protected async getConnection() {
+  protected async getConnection(): Promise<Connection> {
     if (!this.initPromise) {
-      this.initPromise = this.initDatabase();
+      this.initPromise = this.init();
     }
 
     try {
-      const db = (await this.initPromise);
-      return db.connect();
+      const { connection } = await this.initPromise;
+      return connection;
     } catch (e) {
       this.initPromise = null;
 
@@ -130,7 +179,8 @@ export class DuckDBDriver extends BaseDriver implements DriverInterface {
 
   public async release(): Promise<void> {
     if (this.initPromise) {
-      const close = promisify((await this.initPromise).close).bind(this);
+      const { db } = await this.initPromise;
+      const close = promisify(db.close).bind(db);
       this.initPromise = null;
 
       await close();

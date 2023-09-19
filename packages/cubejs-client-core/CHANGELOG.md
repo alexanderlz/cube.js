@@ -3,6 +3,47 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+## [0.33.58](https://github.com/cube-js/cube/compare/v0.33.57...v0.33.58) (2023-09-18)
+
+
+### Bug Fixes
+
+* **cubejs-client/core:** drillDown - check dateRange before destructuring ([#7138](https://github.com/cube-js/cube/issues/7138)) ([21a7cc2](https://github.com/cube-js/cube/commit/21a7cc2e852366ca224bf84e968c90c30e5e2332))
+
+
+
+
+
+## [0.33.55](https://github.com/cube-js/cube/compare/v0.33.54...v0.33.55) (2023-09-12)
+
+
+### Features
+
+* **client-core:** castNumerics option ([#7123](https://github.com/cube-js/cube/issues/7123)) ([9aed9ac](https://github.com/cube-js/cube/commit/9aed9ac2c271d064888db6f3fe726dac350b52ea))
+
+
+
+
+
+## [0.33.47](https://github.com/cube-js/cube/compare/v0.33.46...v0.33.47) (2023-08-15)
+
+**Note:** Version bump only for package @cubejs-client/core
+
+
+
+
+
+## [0.33.44](https://github.com/cube-js/cube/compare/v0.33.43...v0.33.44) (2023-08-11)
+
+
+### Features
+
+* **client-core:** Add Meta to export ([#6988](https://github.com/cube-js/cube/issues/6988)) Thanks [@philipprus](https://github.com/philipprus)! ([1f2443c](https://github.com/cube-js/cube/commit/1f2443c073b383ed5993afdc348b1ba599443619))
+
+
+
+
+
 ## [0.33.12](https://github.com/cube-js/cube/compare/v0.33.11...v0.33.12) (2023-05-22)
 
 

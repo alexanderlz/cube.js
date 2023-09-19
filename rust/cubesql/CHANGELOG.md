@@ -3,6 +3,147 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+## [0.33.57](https://github.com/cube-js/cube/compare/v0.33.56...v0.33.57) (2023-09-15)
+
+
+### Bug Fixes
+
+* **cubesql:** ORDER BY references outer alias instead of inner expression for SQL push down ([778e16c](https://github.com/cube-js/cube/commit/778e16c52319e5ba6d8a786de1e5ff95036b4461))
+
+
+
+
+
+## [0.33.54](https://github.com/cube-js/cube.js/compare/v0.33.53...v0.33.54) (2023-09-12)
+
+
+### Features
+
+* **cubesql:** `ORDER BY` SQL push down support ([#7115](https://github.com/cube-js/cube.js/issues/7115)) ([49ea3cf](https://github.com/cube-js/cube.js/commit/49ea3cf0721f30da142fb021f860cc56b0a85ab6))
+
+
+
+
+
+## [0.33.53](https://github.com/cube-js/cube.js/compare/v0.33.52...v0.33.53) (2023-09-08)
+
+
+### Features
+
+* **cubesql:** Ungrouped SQL push down ([#7102](https://github.com/cube-js/cube.js/issues/7102)) ([4c7fde5](https://github.com/cube-js/cube.js/commit/4c7fde5a96a5db0978b72d0887e533450123e9f7))
+
+
+
+
+
+## [0.33.51](https://github.com/cube-js/cube/compare/v0.33.50...v0.33.51) (2023-09-06)
+
+
+### Features
+
+* **cubesql:** Support `inet_server_addr` stub ([9ecb180](https://github.com/cube-js/cube/commit/9ecb180add83a06f5689f530df561f79d441311f))
+
+
+
+
+
+## [0.33.50](https://github.com/cube-js/cube/compare/v0.33.49...v0.33.50) (2023-09-04)
+
+
+### Features
+
+* **cubesql:** Support `Date32` to `Timestamp` coercion ([54bdfee](https://github.com/cube-js/cube/commit/54bdfeec01ce9bbdd78b022fcf02687a9dcf0793))
+
+
+
+
+
+## [0.33.49](https://github.com/cube-js/cube/compare/v0.33.48...v0.33.49) (2023-08-31)
+
+
+### Features
+
+* **cubesql:** Support multiple values in `SET` ([41af344](https://github.com/cube-js/cube/commit/41af3441bbb1502950a3e34905070f055c783f29))
+
+
+
+
+
+## [0.33.48](https://github.com/cube-js/cube/compare/v0.33.47...v0.33.48) (2023-08-23)
+
+
+### Features
+
+* **cubesql:** Ungrouped queries support ([#7056](https://github.com/cube-js/cube/issues/7056)) ([1b5c161](https://github.com/cube-js/cube/commit/1b5c161655de0b055bf55dcd399cd6cde199ef46))
+
+
+
+
+
+## [0.33.47](https://github.com/cube-js/cube.js/compare/v0.33.46...v0.33.47) (2023-08-15)
+
+
+### Features
+
+* **cubesql:** Support LIMIT for SQL push down ([1b5c19f](https://github.com/cube-js/cube.js/commit/1b5c19f03331ca4174b37614b8b41cdafc211ad7))
+
+
+
+
+
+## [0.33.46](https://github.com/cube-js/cube.js/compare/v0.33.45...v0.33.46) (2023-08-14)
+
+
+### Features
+
+* **cubesql:** Initial SQL push down support for BigQuery, Clickhouse and MySQL ([38467ab](https://github.com/cube-js/cube.js/commit/38467ab7de64803cd51acf4d5fc696938e52f778))
+
+
+
+
+
+## [0.33.45](https://github.com/cube-js/cube.js/compare/v0.33.44...v0.33.45) (2023-08-13)
+
+
+### Features
+
+* **cubesql:** CASE WHEN SQL push down ([#7029](https://github.com/cube-js/cube.js/issues/7029)) ([80e4a60](https://github.com/cube-js/cube.js/commit/80e4a609cdb983db0a600d0fff0fd5bfe31652ed))
+* **cubesql:** Whole SQL query push down to data sources ([#6629](https://github.com/cube-js/cube.js/issues/6629)) ([0e8a76a](https://github.com/cube-js/cube.js/commit/0e8a76a20cb37e675997f384785dd06e09175113))
+
+
+
+
+
+## [0.33.28](https://github.com/cube-js/cube/compare/v0.33.27...v0.33.28) (2023-06-19)
+
+**Note:** Version bump only for package @cubejs-backend/cubesql
+
+
+
+
+
+## [0.33.26](https://github.com/cube-js/cube/compare/v0.33.25...v0.33.26) (2023-06-14)
+
+
+### Features
+
+* **schema:** Initial support for jinja templates ([#6704](https://github.com/cube-js/cube/issues/6704)) ([338d1b7](https://github.com/cube-js/cube/commit/338d1b7ed03fc074c06fb028f731c9817ba8d419))
+
+
+
+
+
+## [0.33.24](https://github.com/cube-js/cube/compare/v0.33.23...v0.33.24) (2023-06-05)
+
+
+### Features
+
+* **cubesql:** Support `CURRENT_DATE` scalar function ([ec928a6](https://github.com/cube-js/cube/commit/ec928a67f05ed91517b556b701581d8d04370cc7))
+
+
+
+
+
 ## [0.33.23](https://github.com/cube-js/cube/compare/v0.33.22...v0.33.23) (2023-06-01)
 
 **Note:** Version bump only for package @cubejs-backend/cubesql

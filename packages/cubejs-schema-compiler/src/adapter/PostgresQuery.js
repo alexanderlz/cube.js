@@ -20,8 +20,8 @@ class PostgresParamAllocator extends ParamAllocator {
 }
 
 export class PostgresQuery extends BaseQuery {
-  newParamAllocator() {
-    return new PostgresParamAllocator();
+  newParamAllocator(expressionParams) {
+    return new PostgresParamAllocator(expressionParams);
   }
 
   convertTz(field) {
@@ -42,5 +42,14 @@ export class PostgresQuery extends BaseQuery {
 
   countDistinctApprox(sql) {
     return `round(hll_cardinality(hll_add_agg(hll_hash_any(${sql}))))`;
+  }
+
+  sqlTemplates() {
+    const templates = super.sqlTemplates();
+    // eslint-disable-next-line no-template-curly-in-string
+    templates.params.param = '${{ param_index + 1 }}';
+    templates.functions.DATETRUNC = 'DATE_TRUNC({{ args_concat }})';
+    templates.functions.CONCAT = 'CONCAT({% for arg in args %}CAST({{arg}} AS TEXT){% if not loop.last %},{% endif %}{% endfor %})';
+    return templates;
   }
 }

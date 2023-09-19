@@ -22,6 +22,7 @@ use crate::metastore::{
 };
 use crate::remotefs::{ensure_temp_file_is_dropped, RemoteFs};
 use crate::table::{Row, TableValue};
+use crate::util::batch_memory::columns_vec_buffer_size;
 use crate::CubeError;
 use arrow::datatypes::{Schema, SchemaRef};
 use std::{
@@ -35,6 +36,7 @@ use crate::cluster::{node_name_by_partition, Cluster};
 use crate::config::injection::DIService;
 use crate::config::ConfigObj;
 use crate::metastore::chunks::chunk_file_name;
+use crate::queryplanner::trace_data_loaded::DataLoadedSize;
 use crate::table::data::cmp_partition_key;
 use crate::table::parquet::{arrow_schema, ParquetTableStore};
 use arrow::array::{Array, ArrayRef, Int64Builder, StringBuilder, UInt64Array};
@@ -222,7 +224,11 @@ pub trait ChunkDataStore: DIService + Send + Sync {
         in_memory: bool,
     ) -> Result<Vec<ChunkUploadJob>, CubeError>;
     async fn repartition(&self, partition_id: u64) -> Result<(), CubeError>;
-    async fn repartition_chunk(&self, chunk_id: u64) -> Result<(), CubeError>;
+    async fn repartition_chunk(
+        &self,
+        chunk_id: u64,
+        data_loaded_size: Arc<DataLoadedSize>,
+    ) -> Result<(), CubeError>;
     async fn get_chunk_columns(&self, chunk: IdRow<Chunk>) -> Result<Vec<RecordBatch>, CubeError>;
     async fn has_in_memory_chunk(
         &self,
@@ -246,7 +252,7 @@ pub trait ChunkDataStore: DIService + Send + Sync {
     ) -> Result<(Vec<ArrayRef>, Vec<u64>), CubeError>;
     async fn add_memory_chunk(&self, chunk_id: u64, batch: RecordBatch) -> Result<(), CubeError>;
     async fn free_memory_chunk(&self, chunk_id: u64) -> Result<(), CubeError>;
-    async fn free_deleted_memory_chunks(&self) -> Result<(), CubeError>;
+    async fn free_deleted_memory_chunks(&self, chunk_ids: Vec<u64>) -> Result<(), CubeError>;
     async fn add_persistent_chunk(
         &self,
         index: IdRow<Index>,
@@ -466,7 +472,11 @@ impl ChunkDataStore for ChunkStore {
         Ok(())
     }
 
-    async fn repartition_chunk(&self, chunk_id: u64) -> Result<(), CubeError> {
+    async fn repartition_chunk(
+        &self,
+        chunk_id: u64,
+        data_loaded_size: Arc<DataLoadedSize>,
+    ) -> Result<(), CubeError> {
         let chunk = self.meta_store.get_chunk(chunk_id).await?;
         if !chunk.get_row().active() {
             log::debug!("Skipping repartition of inactive chunk: {:?}", chunk);
@@ -500,6 +510,8 @@ impl ChunkDataStore for ChunkStore {
                 &batches.iter().map(|b| b.column(i).as_ref()).collect_vec(),
             )?)
         }
+
+        data_loaded_size.add(columns_vec_buffer_size(&columns));
 
         //There is no data in the chunk, so we just deactivate it
         if columns.len() == 0 || columns[0].data().len() == 0 {
@@ -693,19 +705,13 @@ impl ChunkDataStore for ChunkStore {
         memory_chunks.remove(&chunk_id);
         Ok(())
     }
-    #[tracing::instrument(level = "trace", skip(self))]
-    async fn free_deleted_memory_chunks(&self) -> Result<(), CubeError> {
-        let existing_chunk_ids = self
-            .meta_store
-            .get_all_node_in_memory_chunks(self.cluster.server_name().to_string())
-            .await?
-            .into_iter()
-            .map(|c| c.get_id())
-            .collect::<HashSet<_>>();
 
+    #[tracing::instrument(level = "trace", skip(self))]
+    async fn free_deleted_memory_chunks(&self, chunk_ids: Vec<u64>) -> Result<(), CubeError> {
+        let ids_set = chunk_ids.into_iter().collect::<HashSet<_>>();
         {
             let mut memory_chunks = self.memory_chunks.write().await;
-            memory_chunks.retain(|id, _| existing_chunk_ids.contains(id));
+            memory_chunks.retain(|id, _| !ids_set.contains(id));
         }
 
         self.report_in_memory_metrics().await?;
