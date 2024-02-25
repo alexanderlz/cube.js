@@ -3,6 +3,147 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+## [0.34.55](https://github.com/cube-js/cube/compare/v0.34.54...v0.34.55) (2024-02-15)
+
+**Note:** Version bump only for package @cubejs-backend/base-driver
+
+
+
+
+
+## [0.34.54](https://github.com/cube-js/cube/compare/v0.34.53...v0.34.54) (2024-02-13)
+
+**Note:** Version bump only for package @cubejs-backend/base-driver
+
+
+
+
+
+## [0.34.47](https://github.com/cube-js/cube/compare/v0.34.46...v0.34.47) (2024-01-23)
+
+**Note:** Version bump only for package @cubejs-backend/base-driver
+
+
+
+
+
+## [0.34.44](https://github.com/cube-js/cube/compare/v0.34.43...v0.34.44) (2024-01-15)
+
+
+### Features
+
+* **query-orchestrator:** Queue - reduce traffic for processing (Cube Store only) ([#7644](https://github.com/cube-js/cube/issues/7644)) ([7db90fb](https://github.com/cube-js/cube/commit/7db90fb7532d53d7ce46ba342e89250110f32c6b))
+
+
+
+
+
+## [0.34.41](https://github.com/cube-js/cube/compare/v0.34.40...v0.34.41) (2024-01-02)
+
+**Note:** Version bump only for package @cubejs-backend/base-driver
+
+
+
+
+
+## [0.34.33](https://github.com/cube-js/cube/compare/v0.34.32...v0.34.33) (2023-12-11)
+
+**Note:** Version bump only for package @cubejs-backend/base-driver
+
+
+
+
+
+## [0.34.32](https://github.com/cube-js/cube/compare/v0.34.31...v0.34.32) (2023-12-07)
+
+**Note:** Version bump only for package @cubejs-backend/base-driver
+
+
+
+
+
+## [0.34.31](https://github.com/cube-js/cube/compare/v0.34.30...v0.34.31) (2023-12-07)
+
+**Note:** Version bump only for package @cubejs-backend/base-driver
+
+
+
+
+
+## [0.34.26](https://github.com/cube-js/cube/compare/v0.34.25...v0.34.26) (2023-11-28)
+
+
+### Features
+
+* **cubestore-driver:** Queue - protect possible race condition with hearbeat/cancellation on error ([#7467](https://github.com/cube-js/cube/issues/7467)) ([9c0ad07](https://github.com/cube-js/cube/commit/9c0ad0746d54543e264789dd36fa0ce2b91b7626))
+
+
+
+
+
+## [0.34.25](https://github.com/cube-js/cube/compare/v0.34.24...v0.34.25) (2023-11-24)
+
+**Note:** Version bump only for package @cubejs-backend/base-driver
+
+
+
+
+
+## [0.34.20](https://github.com/cube-js/cube/compare/v0.34.19...v0.34.20) (2023-11-14)
+
+**Note:** Version bump only for package @cubejs-backend/base-driver
+
+
+
+
+
+## [0.34.14](https://github.com/cube-js/cube/compare/v0.34.13...v0.34.14) (2023-11-05)
+
+**Note:** Version bump only for package @cubejs-backend/base-driver
+
+
+
+
+
+## [0.34.12](https://github.com/cube-js/cube/compare/v0.34.11...v0.34.12) (2023-10-30)
+
+
+### Features
+
+* **cubestore-driver:** Queue - protect possible race condition on cancellation ([#7356](https://github.com/cube-js/cube/issues/7356)) ([a788954](https://github.com/cube-js/cube/commit/a7889543f4fc786ab05a6141227d5f31fc6ffff8))
+
+
+
+
+
+## [0.34.11](https://github.com/cube-js/cube/compare/v0.34.10...v0.34.11) (2023-10-29)
+
+
+### Features
+
+* **query-orchestrator:** Pass queueId for orphaned query cancellation ([#7353](https://github.com/cube-js/cube/issues/7353)) ([08ce078](https://github.com/cube-js/cube/commit/08ce078e4f094c18da9fdd265629e4bb01a8a2c9))
+* **query-orchestrator:** Use real queueId in processQuery for events ([#7352](https://github.com/cube-js/cube/issues/7352)) ([bf83762](https://github.com/cube-js/cube/commit/bf83762adfb75585ae233b2c671971761f133048))
+
+
+
+
+
+## [0.34.1](https://github.com/cube-js/cube/compare/v0.34.0...v0.34.1) (2023-10-09)
+
+**Note:** Version bump only for package @cubejs-backend/base-driver
+
+
+
+
+
+# [0.34.0](https://github.com/cube-js/cube/compare/v0.33.65...v0.34.0) (2023-10-03)
+
+**Note:** Version bump only for package @cubejs-backend/base-driver
+
+
+
+
+
 ## [0.33.58](https://github.com/cube-js/cube/compare/v0.33.57...v0.33.58) (2023-09-18)
 
 

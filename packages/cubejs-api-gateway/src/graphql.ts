@@ -77,7 +77,9 @@ const DateTimeFilter = inputObjectType({
     t.list.string('inDateRange');
     t.list.string('notInDateRange');
     t.string('beforeDate');
+    t.string('beforeOrOnDate');
     t.string('afterDate');
+    t.string('afterOrOnDate');
     t.boolean('set');
   }
 });
@@ -501,11 +503,12 @@ export function makeSchema(metaConfig: any): GraphQLSchema {
           offset: intArg(),
           timezone: stringArg(),
           renewQuery: booleanArg(),
+          ungrouped: booleanArg(),
           orderBy: arg({
             type: 'RootOrderByInput'
           }),
         },
-        resolve: async (_, { where, limit, offset, timezone, orderBy, renewQuery }, { req, apiGateway }, infos) => {
+        resolve: async (_, { where, limit, offset, timezone, orderBy, renewQuery, ungrouped }, { req, apiGateway }, infos) => {
           const measures: string[] = [];
           const dimensions: string[] = [];
           const timeDimensions: any[] = [];
@@ -602,6 +605,7 @@ export function makeSchema(metaConfig: any): GraphQLSchema {
             ...(timezone && { timezone }),
             ...(filters.length && { filters }),
             ...(renewQuery && { renewQuery }),
+            ...(ungrouped && { ungrouped }),
           };
 
           const results = await new Promise<any>((resolve, reject) => {

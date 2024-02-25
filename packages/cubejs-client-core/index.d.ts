@@ -153,6 +153,9 @@ declare module '@cubejs-client/core' {
     sortedDimensions: string[];
     sortedTimeDimensions: [[string, string]];
     measureToLeafMeasures?: Record<string, LeafMeasure[]>;
+    ownedDimensions: string[];
+    ownedTimeDimensionsAsIs: [[string, string | null]];
+    ownedTimeDimensionsWithRollupGranularity: [[string, string]];
   };
 
   export type PreAggregationType = 'rollup' | 'rollupJoin' | 'rollupLambda' | 'originalSql';
@@ -728,6 +731,11 @@ declare module '@cubejs-client/core' {
     query(): Query;
     rawData(): T[];
     annotation(): QueryAnnotations;
+
+    /**
+     * @return the total number of rows if the `total` option was set, when sending the query
+     */
+    totalRows(): number | null;
   }
 
   export type Filter = BinaryFilter | UnaryFilter | LogicalOrFilter | LogicalAndFilter;
@@ -774,7 +782,9 @@ declare module '@cubejs-client/core' {
     | 'inDateRange'
     | 'notInDateRange'
     | 'beforeDate'
-    | 'afterDate';
+    | 'beforeOrOnDate'
+    | 'afterDate'
+    | 'afterOrOnDate';
 
   export type TimeDimensionGranularity = 'second' | 'minute' | 'hour' | 'day' | 'week' | 'month' | 'quarter' | 'year';
 
@@ -825,7 +835,7 @@ declare module '@cubejs-client/core' {
 
   type QueryArrayRecordType<T extends DeeplyReadonly<Query[]>> =
     T extends readonly [infer First, ...infer Rest]
-    ? SingleQueryRecordType<First> | QueryArrayRecordType<Rest & DeeplyReadonly<Query[]>>
+    ? SingleQueryRecordType<DeeplyReadonly<First>> | QueryArrayRecordType<Rest & DeeplyReadonly<Query[]>>
     : never;
 
   // If we can't infer any members at all, then return any.
@@ -895,7 +905,12 @@ declare module '@cubejs-client/core' {
     name: string;
     title: string;
     shortTitle: string;
+    description?: string;
+    /**
+     * @deprecated use `public` instead
+     */
     isVisible?: boolean;
+    public?: boolean;
     meta?: any;
   };
 
@@ -904,7 +919,12 @@ declare module '@cubejs-client/core' {
     name: string;
     title: string;
     shortTitle: string;
+    description?: string;
+    /**
+     * @deprecated use `public` instead
+     */
     isVisible?: boolean;
+    public?: boolean;
     meta?: any;
   };
 
@@ -917,9 +937,11 @@ declare module '@cubejs-client/core' {
       measures: string[];
       dimensions: string[];
     };
+    format?: 'currency' | 'percent';
   };
 
   export type TCubeDimension = BaseCubeMember & {
+    primaryKey?: boolean;
     suggestFilterValues: boolean;
   };
 
@@ -957,9 +979,18 @@ declare module '@cubejs-client/core' {
   export type Cube = {
     name: string;
     title: string;
+    description?: string;
     measures: TCubeMeasure[];
     dimensions: TCubeDimension[];
     segments: TCubeSegment[];
+    connectedComponent?: number;
+    type?: 'view' | 'cube';
+    /**
+     * @deprecated use `public` instead
+     */
+    isVisible?: boolean;
+    public?: boolean;
+    meta?: any;
   };
 
 

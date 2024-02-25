@@ -3,6 +3,112 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+## [0.34.55](https://github.com/cube-js/cube.js/compare/v0.34.54...v0.34.55) (2024-02-15)
+
+
+### Bug Fixes
+
+* Cannot read properties of null (reading 'includes') ([9b50382](https://github.com/cube-js/cube.js/commit/9b503827a8f4cf18b926dfec4e65a0dce0de0b70))
+
+
+
+
+
+## [0.34.54](https://github.com/cube-js/cube.js/compare/v0.34.53...v0.34.54) (2024-02-13)
+
+**Note:** Version bump only for package @cubejs-backend/shared
+
+
+
+
+
+## [0.34.47](https://github.com/cube-js/cube.js/compare/v0.34.46...v0.34.47) (2024-01-23)
+
+
+### Features
+
+* **duckdb-driver:** Support advanced configuration for S3 via env variables ([#7544](https://github.com/cube-js/cube.js/issues/7544)) ([4862195](https://github.com/cube-js/cube.js/commit/4862195d57a8796c3bbd74696eb41df4505e545c))
+
+
+
+
+
+## [0.34.41](https://github.com/cube-js/cube.js/compare/v0.34.40...v0.34.41) (2024-01-02)
+
+
+### Bug Fixes
+
+* Do not fail extractDate on missing result set ([c8567ef](https://github.com/cube-js/cube.js/commit/c8567eff0a8ccafe04be2948331c11f80bfeab09))
+
+
+
+
+
+## [0.34.33](https://github.com/cube-js/cube/compare/v0.34.32...v0.34.33) (2023-12-11)
+
+
+### Features
+
+* **query-orchestrator:** Reduce number of touches for pre-aggregations ([#7515](https://github.com/cube-js/cube/issues/7515)) ([c22eb91](https://github.com/cube-js/cube/commit/c22eb9183c6c7c02e137662ee935f418ef45f02a))
+
+
+
+
+
+## [0.34.32](https://github.com/cube-js/cube.js/compare/v0.34.31...v0.34.32) (2023-12-07)
+
+**Note:** Version bump only for package @cubejs-backend/shared
+
+
+
+
+
+## [0.34.25](https://github.com/cube-js/cube/compare/v0.34.24...v0.34.25) (2023-11-24)
+
+
+### Bug Fixes
+
+* Validation problem with ECDSA SSL keys ([#7453](https://github.com/cube-js/cube/issues/7453)) ([567d2ca](https://github.com/cube-js/cube/commit/567d2cad9a81e82dacd27e99fce9f28db42e9d75))
+
+
+
+
+
+## [0.34.20](https://github.com/cube-js/cube/compare/v0.34.19...v0.34.20) (2023-11-14)
+
+**Note:** Version bump only for package @cubejs-backend/shared
+
+
+
+
+
+## [0.34.14](https://github.com/cube-js/cube.js/compare/v0.34.13...v0.34.14) (2023-11-05)
+
+**Note:** Version bump only for package @cubejs-backend/shared
+
+
+
+
+
+## [0.34.1](https://github.com/cube-js/cube.js/compare/v0.34.0...v0.34.1) (2023-10-09)
+
+
+### Bug Fixes
+
+* **duckdb-driver:** allow setting default schema ([#7181](https://github.com/cube-js/cube.js/issues/7181)) ([a52c4d6](https://github.com/cube-js/cube.js/commit/a52c4d603a00813380075f0c1b20ad44cb026502))
+
+
+
+
+
+# [0.34.0](https://github.com/cube-js/cube.js/compare/v0.33.65...v0.34.0) (2023-10-03)
+
+**Note:** Version bump only for package @cubejs-backend/shared
+
+
+
+
+
 ## [0.33.57](https://github.com/cube-js/cube/compare/v0.33.56...v0.33.57) (2023-09-15)
 
 

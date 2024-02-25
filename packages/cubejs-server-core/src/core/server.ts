@@ -149,11 +149,8 @@ export class CubejsServerCore {
 
   public coreServerVersion: string | null = null;
 
-  private contextAcceptor: ContextAcceptor;
+  protected contextAcceptor: ContextAcceptor;
 
-  /**
-   * Class constructor.
-   */
   public constructor(
     opts: CreateOptions = {},
     protected readonly systemOptions?: SystemOptions,
@@ -308,13 +305,15 @@ export class CubejsServerCore {
         oldLogger(msg, params);
       });
 
-      setInterval(() => {
-        if (loadRequestCount > 0 || loadSqlRequestCount > 0) {
-          this.event('Load Request Success Aggregated', { loadRequestSuccessCount: loadRequestCount, loadSqlRequestSuccessCount: loadSqlRequestCount });
-        }
-        loadRequestCount = 0;
-        loadSqlRequestCount = 0;
-      }, 60000);
+      if (this.options.telemetry) {
+        setInterval(() => {
+          if (loadRequestCount > 0 || loadSqlRequestCount > 0) {
+            this.event('Load Request Success Aggregated', { loadRequestSuccessCount: loadRequestCount, loadSqlRequestSuccessCount: loadSqlRequestCount });
+          }
+          loadRequestCount = 0;
+          loadSqlRequestCount = 0;
+        }, 60000);
+      }
 
       this.event('Server Start');
     }

@@ -17,7 +17,7 @@ jobs:
       - name: Install Rust
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: nightly-2022-03-22
+          toolchain: nightly-2023-12-13
           override: true
           components: rustfmt
       - name: Install Node.js 16.x
@@ -69,7 +69,7 @@ jobs:
     strategy:
       matrix:
         node-version: [16]
-        python-version: ["3.9", "3.10", "3.11", "fallback"]
+        python-version: ["3.9", "3.10", "3.11", "3.12", "fallback"]
         target: ["x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu"]
         include:
           - target: x86_64-unknown-linux-gnu
@@ -90,7 +90,7 @@ jobs:
       - name: Install Rust
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: nightly-2022-03-22
+          toolchain: nightly-2023-12-13
           override: true
           components: rustfmt
           target: ${{ matrix.target }}
@@ -132,6 +132,11 @@ jobs:
         env:
           CARGO_BUILD_TARGET: ${{ matrix.target }}
         run: cd packages/cubejs-backend-native && npm run native:build-release
+      - name: Setup cross compilation
+        if: (matrix.target == 'aarch64-unknown-linux-gnu')
+        uses: allenevans/set-env@v3.0.0
+        with:
+          PYO3_CROSS_PYTHON_VERSION: ${{ matrix.python-version }}
       - name: Build native (with Python)
         if: (matrix.python-version != 'fallback')
         env:
@@ -165,7 +170,7 @@ jobs:
         node-version: [16.x]
         os-version: ["macos-11"]
         target: ["x86_64-apple-darwin", "aarch64-apple-darwin"]
-        python-version: ["3.9", "3.10", "3.11", "fallback"]
+        python-version: ["3.9", "3.10", "3.11", "3.12", "fallback"]
         include:
           - target: x86_64-apple-darwin
             package_target_arch: x64
@@ -185,6 +190,8 @@ jobs:
             python-version: "3.10"
           - target: "aarch64-apple-darwin"
             python-version: "3.11"
+          - target: "aarch64-apple-darwin"
+            python-version: "3.12"
       fail-fast: false
 
     steps:
@@ -193,7 +200,7 @@ jobs:
       - name: Install Rust
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: nightly-2022-03-22
+          toolchain: nightly-2023-12-13
           override: true
           components: rustfmt
           target: ${{ matrix.target }}
@@ -288,7 +295,7 @@ jobs:
       - name: Install Rust
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: nightly-2022-03-22
+          toolchain: nightly-2023-12-13
           override: true
           components: rustfmt
       - name: Install Python
@@ -397,7 +404,7 @@ jobs:
           echo ::set-output name=tags::${TAGS}
           echo ::set-output name=created::$(date -u +'%Y-%m-%dT%H:%M:%SZ')
       - name: Login to DockerHub
-        uses: docker/login-action@v1
+        uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
@@ -473,7 +480,7 @@ jobs:
           echo ::set-output name=tags::${TAGS}
           echo ::set-output name=created::$(date -u +'%Y-%m-%dT%H:%M:%SZ')
       - name: Login to DockerHub
-        uses: docker/login-action@v1
+        uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
@@ -506,7 +513,7 @@ jobs:
             IMAGE_VERSION=${{ steps.prep.outputs.version }}
 
   docker-debian-jdk:
-    needs: [npm, cubestore, native_linux]
+    needs: [npm, cubestore_linux, native_linux]
     name: Debian with jdk docker image
     runs-on: ubuntu-20.04
     timeout-minutes: 30
@@ -545,7 +552,7 @@ jobs:
           echo ::set-output name=tags::${TAGS}
           echo ::set-output name=created::$(date -u +'%Y-%m-%dT%H:%M:%SZ')
       - name: Login to DockerHub
-        uses: docker/login-action@v1
+        uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
@@ -641,7 +648,7 @@ jobs:
           echo ::set-output name=tags::${TAGS}
           echo ::set-output name=created::$(date -u +'%Y-%m-%dT%H:%M:%SZ')
       - name: Login to DockerHub
-        uses: docker/login-action@v1
+        uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
@@ -732,11 +739,11 @@ jobs:
           target: ${{ matrix.target }}
           override: true
           components: rustfmt
-      - uses: Swatinem/rust-cache@v1
+      - uses: Swatinem/rust-cache@v2
         with:
-          working-directory: rust/cubestore
-          key: cross-${{ runner.OS }}-${{ matrix.target }}
-          sharedKey:  cross-${{ runner.OS }}-${{ matrix.target }}
+          workspaces: ./rust/cubestore -> target
+          prefix-key: v0-rust-cubestore-cross
+          key: target-${{ matrix.target }}
       - run: source .github/actions/${{ matrix.before_script }}.sh
         if: ${{ matrix.before_script }}
         shell: bash
@@ -819,11 +826,11 @@ jobs:
           target: ${{ matrix.target }}
           override: true
           components: rustfmt
-      - uses: Swatinem/rust-cache@v1
+      - uses: Swatinem/rust-cache@v2
         with:
-          working-directory: rust/cubestore
-          key: cross-${{ runner.OS }}-${{ matrix.target }}
-          sharedKey:  cross-${{ runner.OS }}-${{ matrix.target }}
+          workspaces: ./rust/cubestore -> target
+          prefix-key: v0-rust-cubestore-cross
+          key: target-${{ matrix.target }}
       - run: source .github/actions/${{ matrix.before_script }}.sh
         if: ${{ matrix.before_script }}
         shell: bash
@@ -836,7 +843,7 @@ jobs:
         if: ${{ startsWith(matrix.os, 'windows') }}
         run: choco install -y --force llvm --version 9.0.1
       - name: Set Env Variables for Windows
-        uses: allenevans/set-env@v2.0.0
+        uses: allenevans/set-env@v3.0.0
         if: ${{ startsWith(matrix.os, 'windows') }}
         with:
           OPENSSL_DIR: 'C:/vcpkg/packages/openssl_x64-windows'

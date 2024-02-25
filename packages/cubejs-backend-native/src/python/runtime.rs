@@ -1,4 +1,5 @@
-use crate::python::cross::CLRepr;
+use crate::cross::{CLRepr, CLReprPython};
+use crate::python::neon_py::*;
 use crate::tokio_runtime_node;
 use cubesql::CubeError;
 use log::{error, trace};
@@ -7,7 +8,6 @@ use neon::types::Deferred;
 use once_cell::sync::OnceCell;
 use pyo3::prelude::*;
 use pyo3::types::{PyFunction, PyTuple};
-use pyo3::AsPyPointer;
 use std::fmt::Formatter;
 use std::future::Future;
 use std::pin::Pin;
@@ -80,7 +80,10 @@ impl PyRuntime {
                 args,
                 callback: PyScheduledCallback::Channel(rx),
             })
-            .await?;
+            .await
+            .map_err(|err| {
+                CubeError::internal(format!("Unable to schedule python function call: {}", err))
+            })?;
 
         tx.await?
     }
@@ -117,15 +120,15 @@ impl PyRuntime {
                 match callback {
                     PyScheduledCallback::NodeDeferred(deferred) => {
                         deferred.settle_with(
-                            &js_channel,
+                            js_channel,
                             move |mut cx| -> NeonResult<Handle<JsError>> {
-                                cx.throw_error(format!("Python error: {}", err))
+                                cx.throw_from_python_error(err)
                             },
                         );
                     }
                     PyScheduledCallback::Channel(chan) => {
                         let send_res =
-                            chan.send(Err(CubeError::internal(format!("Python error: {}", err))));
+                            chan.send(Err(CubeError::internal(format_python_error(err))));
                         if send_res.is_err() {
                             return Err(CubeError::internal(
                                 "Unable to send result back to consumer".to_string(),
@@ -164,10 +167,9 @@ impl PyRuntime {
                         PyScheduledCallback::Channel(chan) => {
                             let _ = match res {
                                 Ok(r) => chan.send(Ok(r)),
-                                Err(err) => chan.send(Err(CubeError::internal(format!(
-                                    "Python error: {}",
-                                    err
-                                )))),
+                                Err(err) => {
+                                    chan.send(Err(CubeError::internal(format_python_error(err))))
+                                }
                             };
                         }
                     }
@@ -175,7 +177,7 @@ impl PyRuntime {
             }
             PyScheduledFunResult::Ready(r) => match callback {
                 PyScheduledCallback::NodeDeferred(deferred) => {
-                    deferred.settle_with(&js_channel, |mut cx| r.into_js(&mut cx));
+                    deferred.settle_with(js_channel, |mut cx| r.into_js(&mut cx));
                 }
                 PyScheduledCallback::Channel(chan) => {
                     if chan.send(Ok(r)).is_err() {
@@ -193,7 +195,11 @@ impl PyRuntime {
     pub fn new(js_channel: neon::event::Channel) -> Self {
         let (sender, mut receiver) = tokio::sync::mpsc::channel::<PyScheduledFun>(1024);
 
+        trace!("New Python runtime");
+
         std::thread::spawn(|| {
+            trace!("Initializing executor in a separate thread");
+
             std::thread::spawn(|| {
                 pyo3_asyncio::tokio::get_runtime()
                     .block_on(pyo3_asyncio::tokio::re_exports::pending::<()>())
@@ -203,17 +209,18 @@ impl PyRuntime {
                 pyo3_asyncio::tokio::run(py, async move {
                     loop {
                         if let Some(task) = receiver.recv().await {
-                            trace!("[py_runtime] task");
+                            trace!("New task");
 
                             if let Err(err) = Self::process_task(task, &js_channel) {
-                                error!("[py_runtime] Error while processing task: {:?}", err)
+                                error!("Error while processing python task: {:?}", err)
                             };
                         }
                     }
                 })
             });
-            if let Err(err) = res {
-                error!("Critical error while processing python calls: {}", err)
+            match res {
+                Ok(_) => trace!("Python runtime loop was closed without error"),
+                Err(err) => error!("Critical error while processing python call: {}", err),
             }
         });
 
@@ -237,8 +244,8 @@ pub fn py_runtime_init<'a, C: Context<'a>>(
     // it's safe to unwrap
     pyo3_asyncio::tokio::init_with_runtime(runtime).unwrap();
 
-    if let Err(_) = PY_RUNTIME.set(PyRuntime::new(channel)) {
-        cx.throw_error(format!("Error on setting PyRuntime"))
+    if PY_RUNTIME.set(PyRuntime::new(channel)).is_err() {
+        cx.throw_error("Error on setting PyRuntime")
     } else {
         Ok(())
     }

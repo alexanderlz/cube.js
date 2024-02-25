@@ -6,6 +6,7 @@ use crate::cachestore::{
     CacheEvictionPolicy, CacheStore, CacheStoreSchedulerImpl, ClusterCacheStoreClient,
     LazyRocksCacheStore,
 };
+use crate::cluster::ingestion::job_processor::{JobProcessor, JobProcessorImpl};
 use crate::cluster::rate_limiter::{BasicProcessRateLimiter, ProcessRateLimiter};
 use crate::cluster::transport::{
     ClusterTransport, ClusterTransportImpl, MetaStoreTransport, MetaStoreTransportImpl,
@@ -15,7 +16,7 @@ use crate::config::injection::{DIService, Injector};
 use crate::config::processing_loop::ProcessingLoop;
 use crate::http::HttpServer;
 use crate::import::limits::ConcurrencyLimits;
-use crate::import::{ImportService, ImportServiceImpl};
+use crate::import::{ImportService, ImportServiceImpl, LocationsValidator, LocationsValidatorImpl};
 use crate::metastore::{
     BaseRocksStoreFs, MetaStore, MetaStoreRpcClient, RocksMetaStore, RocksStoreConfig,
 };
@@ -389,6 +390,8 @@ pub trait ConfigObj: DIService {
 
     fn select_worker_pool_size(&self) -> usize;
 
+    fn select_worker_idle_timeout(&self) -> u64;
+
     fn job_runners_count(&self) -> usize;
 
     fn long_term_job_runners_count(&self) -> usize;
@@ -410,6 +413,8 @@ pub trait ConfigObj: DIService {
     fn meta_store_snapshot_interval(&self) -> u64;
 
     fn meta_store_log_upload_interval(&self) -> u64;
+
+    fn meta_store_log_upload_size_limit(&self) -> u64;
 
     fn gc_loop_interval(&self) -> u64;
 
@@ -436,6 +441,8 @@ pub trait ConfigObj: DIService {
     fn cachestore_cache_threshold_to_force_eviction(&self) -> u8;
 
     fn cachestore_cache_max_size(&self) -> u64;
+
+    fn cachestore_cache_max_entry_size(&self) -> usize;
 
     fn cachestore_cache_compaction_trigger_size(&self) -> u64;
 
@@ -528,6 +535,8 @@ pub trait ConfigObj: DIService {
     fn remote_files_cleanup_delay_secs(&self) -> u64;
 
     fn remote_files_cleanup_batch_size(&self) -> u64;
+
+    fn create_table_max_retries(&self) -> u64;
 }
 
 #[derive(Debug, Clone)]
@@ -551,6 +560,7 @@ pub struct ConfigObjImpl {
     pub dump_dir: Option<PathBuf>,
     pub store_provider: FileStoreProvider,
     pub select_worker_pool_size: usize,
+    pub select_worker_idle_timeout: u64,
     pub job_runners_count: usize,
     pub long_term_job_runners_count: usize,
     pub bind_address: Option<String>,
@@ -562,6 +572,7 @@ pub struct ConfigObjImpl {
     pub in_memory_not_used_timeout: u64,
     pub import_job_timeout: u64,
     pub meta_store_log_upload_interval: u64,
+    pub meta_store_log_upload_size_limit: u64,
     pub meta_store_snapshot_interval: u64,
     pub gc_loop_interval: u64,
     pub stale_stream_timeout: u64,
@@ -575,6 +586,7 @@ pub struct ConfigObjImpl {
     pub cachestore_cache_eviction_loop_interval: u64,
     pub cachestore_cache_ttl_persist_loop_interval: u64,
     pub cachestore_cache_max_size: u64,
+    pub cachestore_cache_max_entry_size: usize,
     pub cachestore_cache_compaction_trigger_size: u64,
     pub cachestore_cache_threshold_to_force_eviction: u8,
     pub cachestore_queue_results_expire: u64,
@@ -621,6 +633,7 @@ pub struct ConfigObjImpl {
     pub local_files_cleanup_delay_secs: u64,
     pub remote_files_cleanup_delay_secs: u64,
     pub remote_files_cleanup_batch_size: u64,
+    pub create_table_max_retries: u64,
 }
 
 crate::di_service!(ConfigObjImpl, [ConfigObj]);
@@ -691,6 +704,10 @@ impl ConfigObj for ConfigObjImpl {
         self.select_worker_pool_size
     }
 
+    fn select_worker_idle_timeout(&self) -> u64 {
+        self.select_worker_idle_timeout
+    }
+
     fn job_runners_count(&self) -> usize {
         self.job_runners_count
     }
@@ -733,6 +750,10 @@ impl ConfigObj for ConfigObjImpl {
 
     fn meta_store_log_upload_interval(&self) -> u64 {
         self.meta_store_log_upload_interval
+    }
+
+    fn meta_store_log_upload_size_limit(&self) -> u64 {
+        self.meta_store_log_upload_size_limit
     }
 
     fn gc_loop_interval(&self) -> u64 {
@@ -781,6 +802,10 @@ impl ConfigObj for ConfigObjImpl {
 
     fn cachestore_cache_max_size(&self) -> u64 {
         self.cachestore_cache_max_size
+    }
+
+    fn cachestore_cache_max_entry_size(&self) -> usize {
+        self.cachestore_cache_max_entry_size
     }
 
     fn cachestore_cache_compaction_trigger_size(&self) -> u64 {
@@ -965,6 +990,10 @@ impl ConfigObj for ConfigObjImpl {
         self.remote_files_cleanup_batch_size
     }
 
+    fn create_table_max_retries(&self) -> u64 {
+        self.create_table_max_retries
+    }
+
     fn cachestore_cache_eviction_below_threshold(&self) -> u8 {
         self.cachestore_cache_eviction_below_threshold
     }
@@ -1136,6 +1165,20 @@ impl Config {
             Some(32 << 20),
         );
 
+        let transport_max_message_size = env_parse_size(
+            "CUBESTORE_TRANSPORT_MAX_MESSAGE_SIZE",
+            64 << 20,
+            Some(256 << 20),
+            Some(16 << 20),
+        );
+
+        let cachestore_cache_max_entry_size = env_parse_size(
+            "CUBESTORE_CACHE_MAX_ENTRY_SIZE",
+            (64 << 20) - (1024 << 10),
+            Some(transport_max_message_size - (1024 << 10)),
+            None,
+        );
+
         let cachestore_cache_compaction_trigger_size = env_parse_size(
             "CUBESTORE_CACHE_COMPACTION_TRIGGER_SIZE",
             Self::calculate_cache_compaction_trigger_size(cachestore_cache_max_size),
@@ -1239,6 +1282,12 @@ impl Config {
                     }
                 },
                 select_worker_pool_size: env_parse("CUBESTORE_SELECT_WORKERS", 4),
+                select_worker_idle_timeout: env_parse_duration(
+                    "CUBESTORE_SELECT_WORKERS_IDLE_TIMEOUT",
+                    10 * 60,
+                    Some(2 * 60 * 60),
+                    None,
+                ),
                 bind_address: Some(
                     env::var("CUBESTORE_BIND_ADDR")
                         .ok()
@@ -1255,6 +1304,12 @@ impl Config {
                 in_memory_not_used_timeout: 30,
                 import_job_timeout: env_parse("CUBESTORE_IMPORT_JOB_TIMEOUT", 600),
                 meta_store_log_upload_interval: 30,
+                meta_store_log_upload_size_limit: env_parse_size(
+                    "CUBESTORE_METASTORE_UPLOAD_LOG_SIZE_LIMIT",
+                    100 * 1024 * 1024,
+                    Some(1024 * 1024 * 1024),
+                    Some(1 * 1024 * 1024),
+                ) as u64,
                 meta_store_snapshot_interval: 300,
                 gc_loop_interval: 60,
                 stale_stream_timeout: env_parse("CUBESTORE_STALE_STREAM_TIMEOUT", 600),
@@ -1295,6 +1350,7 @@ impl Config {
                     Some(0),
                 ),
                 cachestore_cache_max_size: cachestore_cache_max_size as u64,
+                cachestore_cache_max_entry_size,
                 cachestore_cache_compaction_trigger_size,
                 cachestore_cache_threshold_to_force_eviction: 25,
                 cachestore_queue_results_expire: env_parse_duration(
@@ -1414,15 +1470,10 @@ impl Config {
                     * 1024
                     * 1024,
                 disk_space_cache_duration_secs: 300,
-                transport_max_message_size: env_parse_size(
-                    "CUBESTORE_TRANSPORT_MAX_MESSAGE_SIZE",
-                    64 << 20,
-                    Some(256 << 20),
-                    Some(16 << 20),
-                ),
+                transport_max_message_size,
                 transport_max_frame_size: env_parse_size(
                     "CUBESTORE_TRANSPORT_MAX_FRAME_SIZE",
-                    32 << 20,
+                    64 << 20,
                     Some(256 << 20),
                     Some(4 << 20),
                 ),
@@ -1452,6 +1503,7 @@ impl Config {
                     "CUBESTORE_REMOTE_FILES_CLEANUP_BATCH_SIZE",
                     50000,
                 ),
+                create_table_max_retries: env_parse("CUBESTORE_CREATE_TABLE_MAX_RETRIES", 3),
             }),
         }
     }
@@ -1487,6 +1539,7 @@ impl Config {
                     ),
                 },
                 select_worker_pool_size: 0,
+                select_worker_idle_timeout: 600,
                 job_runners_count: 4,
                 long_term_job_runners_count: 8,
                 bind_address: None,
@@ -1507,6 +1560,7 @@ impl Config {
                 cachestore_cache_eviction_loop_interval: 60,
                 cachestore_cache_ttl_persist_loop_interval: 15,
                 cachestore_cache_max_size: 4096 << 20,
+                cachestore_cache_max_entry_size: 64 << 20,
                 cachestore_cache_compaction_trigger_size: 4096 * 2 << 20,
                 cachestore_cache_threshold_to_force_eviction: 25,
                 cachestore_queue_results_expire: 90,
@@ -1535,6 +1589,7 @@ impl Config {
                 metadata_cache_max_capacity_bytes: 0,
                 metadata_cache_time_to_idle_secs: 1_000,
                 meta_store_log_upload_interval: 30,
+                meta_store_log_upload_size_limit: 100 * 1024 * 1024,
                 meta_store_snapshot_interval: 300,
                 gc_loop_interval: 60,
                 stream_replay_check_interval_secs: 60,
@@ -1557,6 +1612,7 @@ impl Config {
                 local_files_cleanup_delay_secs: 600,
                 remote_files_cleanup_delay_secs: 3600,
                 remote_files_cleanup_batch_size: 50000,
+                create_table_max_retries: 3,
             }),
         }
     }
@@ -1637,10 +1693,10 @@ impl Config {
         let remote_fs = self.remote_fs().await.unwrap();
         let _ = fs::remove_dir_all(store_path.clone());
         if clean_remote {
-            let remote_files = remote_fs.list("").await.unwrap();
+            let remote_files = remote_fs.list("".to_string()).await.unwrap();
             for file in remote_files {
                 debug!("Cleaning {}", file);
-                let _ = remote_fs.delete_file(file.as_str()).await.unwrap();
+                let _ = remote_fs.delete_file(file).await.unwrap();
             }
         }
         {
@@ -1664,9 +1720,9 @@ impl Config {
         let _ = DB::destroy(&Options::default(), self.cache_store_path());
         let _ = fs::remove_dir_all(store_path.clone());
         if clean_remote {
-            let remote_files = remote_fs.list("").await.unwrap();
+            let remote_files = remote_fs.list("".to_string()).await.unwrap();
             for file in remote_files {
-                let _ = remote_fs.delete_file(file.as_str()).await;
+                let _ = remote_fs.delete_file(file).await;
             }
         }
     }
@@ -1947,8 +2003,15 @@ impl Config {
             .await;
 
         self.injector
+            .register_typed::<dyn LocationsValidator, _, _, _>(async move |_| {
+                LocationsValidatorImpl::new()
+            })
+            .await;
+
+        self.injector
             .register_typed::<dyn ImportService, _, _, _>(async move |i| {
                 ImportServiceImpl::new(
+                    i.get_service_typed().await,
                     i.get_service_typed().await,
                     i.get_service_typed().await,
                     i.get_service_typed().await,
@@ -2112,6 +2175,18 @@ impl Config {
                     Duration::from_secs(c.query_timeout()),
                     Duration::from_secs(c.import_job_timeout() * 2),
                     query_cache_to_move,
+                    i.get_service_typed().await,
+                )
+            })
+            .await;
+
+        self.injector
+            .register_typed::<dyn JobProcessor, _, _, _>(async move |i| {
+                JobProcessorImpl::new(
+                    i.get_service_typed().await,
+                    i.get_service_typed().await,
+                    i.get_service_typed().await,
+                    i.get_service_typed().await,
                 )
             })
             .await;

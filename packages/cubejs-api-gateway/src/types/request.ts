@@ -100,6 +100,11 @@ type ResponseResultFn =
     extra?: { status: number }
   ) => void;
 
+type MetaResponseResultFn =
+  (
+    message: { cubes: any[], compilerId?: string }
+  ) => void;
+
 /**
  * Base HTTP request parameters map data type.
  * @todo map it to Request.
@@ -121,12 +126,14 @@ type QueryRequest = BaseRequest & {
   expressionParams?: string[];
   exportAnnotatedSql?: boolean;
   memberExpressions?: boolean;
+  disableExternalPreAggregations?: boolean;
 };
 
 type SqlApiRequest = BaseRequest & {
   query: Record<string, any>;
   sqlQuery?: [string, string[]];
   apiType?: ApiType;
+  queryKey: any;
   streaming?: boolean;
 };
 
@@ -198,6 +205,7 @@ export {
   SecurityContextExtractorFn,
   ExtendContextFn,
   ResponseResultFn,
+  MetaResponseResultFn,
   BaseRequest,
   QueryRequest,
   PreAggsJobsRequest,

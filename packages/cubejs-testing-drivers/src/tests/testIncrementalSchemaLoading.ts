@@ -10,6 +10,59 @@ import {
   runEnvironment,
 } from '../helpers';
 
+export function incrementalSchemaLoadingSuite(
+  execute: (name: string, test: () => Promise<void>) => void,
+  driver: () => BaseDriver & { stream?: (query: string, values: string[], options: { highWaterMark: number }) => Promise<any> },
+  tables: string[]
+) {
+  execute('should establish a connection', async () => {
+    await driver().testConnection();
+  });
+
+  execute('should load and check driver capabilities', async () => {
+    const capabilities = driver().capabilities();
+    expect(capabilities).toHaveProperty('incrementalSchemaLoading');
+    expect(capabilities.incrementalSchemaLoading).toBe(true);
+  });
+
+  execute('should load schemas', async () => {
+    const inputSchemas: QuerySchemasResult[] = await driver().getSchemas();
+    expect(inputSchemas).toBeInstanceOf(Array);
+    expect(inputSchemas.length).toBeGreaterThan(0);
+    expect(inputSchemas).toContainEqual({
+      schema_name: expect.any(String),
+    });
+  });
+
+  execute('should load tables for specific schemas', async () => {
+    let inputSchemas: QuerySchemasResult[] = await driver().getSchemas();
+    inputSchemas = inputSchemas.filter((s) => !!s.schema_name);
+    const inputTables = await driver().getTablesForSpecificSchemas(inputSchemas);
+    expect(inputTables).toBeInstanceOf(Array);
+    expect(inputTables.length).toBeGreaterThan(0);
+    expect(inputTables).toContainEqual({
+      schema_name: expect.any(String),
+      table_name: expect.any(String),
+    });
+  });
+
+  execute('should load columns for specific tables', async () => {
+    const createdTables = tables.map((t) => t.split('.').pop()?.toUpperCase());
+    const inputSchemas: QuerySchemasResult[] = await driver().getSchemas();
+    let inputTables: QueryTablesResult[] = await driver().getTablesForSpecificSchemas(inputSchemas);
+    inputTables = inputTables.filter((t) => createdTables.includes(t.table_name.toUpperCase()));
+    const columnsForTables = await driver().getColumnsForSpecificTables(inputTables);
+    expect(columnsForTables).toBeInstanceOf(Array);
+    expect(columnsForTables.length).toBeGreaterThan(0);
+    expect(columnsForTables).toContainEqual({
+      schema_name: expect.any(String),
+      table_name: expect.any(String),
+      column_name: expect.any(String),
+      data_type: expect.any(String),
+    });
+  });
+}
+
 export function testIncrementalSchemaLoading(type: string): void {
   describe(`Incremental schema loading @cubejs-backend/${type}-driver`, () => {
     jest.setTimeout(60 * 5 * 1000);
@@ -22,7 +75,6 @@ export function testIncrementalSchemaLoading(type: string): void {
         options: { highWaterMark: number },
       ) => Promise<any>
     };
-    let query: string[];
     let env: Environment;
     let inputSchemas: QuerySchemasResult[];
     let inputTables: QueryTablesResult[];
@@ -47,70 +99,32 @@ export function testIncrementalSchemaLoading(type: string): void {
         process.env.CUBEJS_DB_PORT = `${env.data.port}`;
       }
       driver = (await getDriver(type)).source;
+      const queries = getCreateQueries(type, suffix);
+      console.log(`Creating ${queries.length} fixture tables`);
+      try {
+        for (const q of queries) {
+          await driver.query(q);
+        }
+        console.log(`Creating ${queries.length} fixture tables completed`);
+      } catch (e: any) {
+        console.log('Error creating fixtures', e.stack);
+        throw e;
+      }
     });
   
     afterAll(async () => {
-      await driver.release();
-      await env.stop();
-    });
-  
-    execute('should establish a connection', async () => {
-      await driver.testConnection();
-    });
-  
-    execute('should create the data source', async () => {
-      query = getCreateQueries(type, suffix);
-      await Promise.all(query.map(async (q) => {
-        await driver.query(q);
-      }));
-    });
-
-    execute('should load and check driver capabilities', async () => {
-      const capabilities = driver.capabilities();
-      expect(capabilities).toHaveProperty('incrementalSchemaLoading');
-      expect(capabilities.incrementalSchemaLoading).toBe(true);
-    });
-
-    execute('should load schemas', async () => {
-      inputSchemas = await driver.getSchemas();
-      expect(inputSchemas).toBeInstanceOf(Array);
-      expect(inputSchemas.length).toBeGreaterThan(0);
-      expect(inputSchemas).toContainEqual({
-        schema_name: expect.any(String),
-      });
-    });
-
-    execute('should load tables for specific schemas', async () => {
-      inputSchemas = inputSchemas.filter((s) => !!s.schema_name);
-      inputTables = await driver.getTablesForSpecificSchemas(inputSchemas);
-      expect(inputTables).toBeInstanceOf(Array);
-      expect(inputTables.length).toBeGreaterThan(0);
-      expect(inputTables).toContainEqual({
-        schema_name: expect.any(String),
-        table_name: expect.any(String),
-      });
-    });
-
-    execute('should load columns for specific tables', async () => {
-      const createdTables = tables.map((t) => t.split('.').pop()?.toUpperCase());
-      inputTables = inputTables.filter((t) => createdTables.includes(t.table_name.toUpperCase()));
-      const columnsForTables = await driver.getColumnsForSpecificTables(inputTables);
-      expect(columnsForTables).toBeInstanceOf(Array);
-      expect(columnsForTables.length).toBeGreaterThan(0);
-      expect(columnsForTables).toContainEqual({
-        schema_name: expect.any(String),
-        table_name: expect.any(String),
-        column_name: expect.any(String),
-        data_type: expect.any(String),
-      });
-    });
-
-    execute('should delete the data source', async () => {
-      await Promise.all(
-        tables.map(async (t) => {
+      try {
+        console.log(`Dropping ${tables.length} fixture tables`);
+        for (const t of tables) {
           await driver.dropTable(t);
-        })
-      );
+        }
+        console.log(`Dropping ${tables.length} fixture tables completed`);
+      } finally {
+        await driver.release();
+        await env.stop();
+      }
     });
+
+    incrementalSchemaLoadingSuite(execute, () => driver, tables);
   });
 }

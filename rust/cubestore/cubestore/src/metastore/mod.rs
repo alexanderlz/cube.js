@@ -845,6 +845,7 @@ pub trait MetaStore: DIService + Send + Sync {
         aggregates: Option<Vec<(String, String)>>,
         partition_split_threshold: Option<u64>,
         trace_obj: Option<String>,
+        drop_if_exists: bool,
     ) -> Result<IdRow<Table>, CubeError>;
     async fn table_ready(&self, id: u64, is_ready: bool) -> Result<IdRow<Table>, CubeError>;
     async fn seal_table(&self, id: u64) -> Result<IdRow<Table>, CubeError>;
@@ -1280,10 +1281,40 @@ impl RocksStoreDetails for RocksMetaStoreDetails {
         opts.set_max_subcompactions(rocksdb_config.max_subcompactions);
         opts.set_block_based_table_factory(&block_opts);
         opts.set_compression_type(rocksdb_config.compression_type);
+        opts.set_bottommost_compression_type(rocksdb_config.bottommost_compression_type);
         opts.increase_parallelism(rocksdb_config.parallelism as i32);
 
         DB::open(&opts, path)
             .map_err(|err| CubeError::internal(format!("DB::open error for metastore: {}", err)))
+    }
+
+    fn open_readonly_db(&self, path: &Path, config: &Arc<dyn ConfigObj>) -> Result<DB, CubeError> {
+        let rocksdb_config = config.metastore_rocksdb_config();
+        let mut opts = Options::default();
+        opts.set_prefix_extractor(rocksdb::SliceTransform::create_fixed_prefix(13));
+
+        let block_opts = {
+            let mut block_opts = BlockBasedOptions::default();
+            // https://github.com/facebook/rocksdb/blob/v7.9.2/include/rocksdb/table.h#L524
+            block_opts.set_format_version(5);
+            block_opts.set_checksum_type(rocksdb_config.checksum_type.as_rocksdb_enum());
+
+            let cache = Cache::new_lru_cache(rocksdb_config.cache_capacity)?;
+            block_opts.set_block_cache(&cache);
+
+            block_opts
+        };
+
+        opts.set_block_based_table_factory(&block_opts);
+        opts.set_compression_type(rocksdb_config.compression_type);
+        opts.set_bottommost_compression_type(rocksdb_config.bottommost_compression_type);
+
+        DB::open_for_read_only(&opts, path, false).map_err(|err| {
+            CubeError::internal(format!(
+                "DB::open_for_read_only error for metastore: {}",
+                err
+            ))
+        })
     }
 
     fn migrate(&self, table_ref: DbTableRef) -> Result<(), CubeError> {
@@ -1459,6 +1490,37 @@ impl RocksMetaStore {
         R: Send + Sync + 'static,
     {
         self.store.write_operation(f).await
+    }
+
+    fn drop_table_impl(
+        table_id: u64,
+        db_ref: DbTableRef,
+        batch_pipe: &mut BatchPipe,
+    ) -> Result<IdRow<Table>, CubeError> {
+        let tables_table = TableRocksTable::new(db_ref.clone());
+        let indexes_table = IndexRocksTable::new(db_ref.clone());
+        let replay_handles_table = ReplayHandleRocksTable::new(db_ref.clone());
+        let trace_objects_table = TraceObjectRocksTable::new(db_ref.clone());
+        let indexes = indexes_table
+            .get_row_ids_by_index(&IndexIndexKey::TableId(table_id), &IndexRocksIndex::TableID)?;
+        let trace_objects = trace_objects_table.get_rows_by_index(
+            &TraceObjectIndexKey::ByTableId(table_id),
+            &TraceObjectRocksIndex::ByTableId,
+        )?;
+        for trace_object in trace_objects {
+            trace_objects_table.delete(trace_object.get_id(), batch_pipe)?;
+        }
+        let replay_handles = replay_handles_table.get_rows_by_index(
+            &ReplayHandleIndexKey::ByTableId(table_id),
+            &ReplayHandleRocksIndex::ByTableId,
+        )?;
+        for replay_handle in replay_handles {
+            replay_handles_table.delete(replay_handle.get_id(), batch_pipe)?;
+        }
+        for index in indexes {
+            RocksMetaStore::drop_index(db_ref.clone(), batch_pipe, index, true)?;
+        }
+        Ok(tables_table.delete(table_id, batch_pipe)?)
     }
 }
 
@@ -2003,9 +2065,15 @@ impl MetaStore for RocksMetaStore {
         aggregates: Option<Vec<(String, String)>>,
         partition_split_threshold: Option<u64>,
         trace_obj: Option<String>,
+        drop_if_exists: bool,
     ) -> Result<IdRow<Table>, CubeError> {
         self.write_operation(move |db_ref, batch_pipe| {
             batch_pipe.invalidate_tables_cache();
+            if drop_if_exists {
+                if let Ok(exists_table) = get_table_impl(db_ref.clone(), schema_name.clone(), table_name.clone()) {
+                    RocksMetaStore::drop_table_impl(exists_table.get_id(), db_ref.clone(), batch_pipe)?;
+                }
+            }
             let rocks_table = TableRocksTable::new(db_ref.clone());
             let rocks_index = IndexRocksTable::new(db_ref.clone());
             let rocks_schema = SchemaRocksTable::new(db_ref.clone());
@@ -2349,32 +2417,7 @@ impl MetaStore for RocksMetaStore {
     async fn drop_table(&self, table_id: u64) -> Result<IdRow<Table>, CubeError> {
         self.write_operation(move |db_ref, batch_pipe| {
             batch_pipe.invalidate_tables_cache();
-            let tables_table = TableRocksTable::new(db_ref.clone());
-            let indexes_table = IndexRocksTable::new(db_ref.clone());
-            let replay_handles_table = ReplayHandleRocksTable::new(db_ref.clone());
-            let trace_objects_table = TraceObjectRocksTable::new(db_ref.clone());
-            let indexes = indexes_table.get_row_ids_by_index(
-                &IndexIndexKey::TableId(table_id),
-                &IndexRocksIndex::TableID,
-            )?;
-            let trace_objects = trace_objects_table.get_rows_by_index(
-                &TraceObjectIndexKey::ByTableId(table_id),
-                &TraceObjectRocksIndex::ByTableId,
-            )?;
-            for trace_object in trace_objects {
-                trace_objects_table.delete(trace_object.get_id(), batch_pipe)?;
-            }
-            let replay_handles = replay_handles_table.get_rows_by_index(
-                &ReplayHandleIndexKey::ByTableId(table_id),
-                &ReplayHandleRocksIndex::ByTableId,
-            )?;
-            for replay_handle in replay_handles {
-                replay_handles_table.delete(replay_handle.get_id(), batch_pipe)?;
-            }
-            for index in indexes {
-                RocksMetaStore::drop_index(db_ref.clone(), batch_pipe, index, true)?;
-            }
-            Ok(tables_table.delete(table_id, batch_pipe)?)
+            RocksMetaStore::drop_table_impl(table_id, db_ref, batch_pipe)
         })
         .await
     }
@@ -5078,6 +5121,7 @@ mod tests {
                 None,
                 None,
                 None,
+                false,
             )
             .await
             .unwrap();
@@ -5100,6 +5144,7 @@ mod tests {
                 None,
                 None,
                 None,
+                false,
             )
             .await
             .unwrap();
@@ -5221,6 +5266,7 @@ mod tests {
                     None,
                     None,
                     None,
+                    false,
                 )
                 .await
                 .unwrap();
@@ -5245,6 +5291,7 @@ mod tests {
                     None,
                     None,
                     None,
+                    false,
                 )
                 .await
                 .is_err());
@@ -5333,6 +5380,7 @@ mod tests {
                     None,
                     None,
                     None,
+                    false,
                 )
                 .await
                 .unwrap();
@@ -5422,6 +5470,7 @@ mod tests {
                     ]),
                     None,
                     None,
+                    false,
                 )
                 .await
                 .unwrap();
@@ -5494,6 +5543,7 @@ mod tests {
                     ]),
                     None,
                     None,
+                    false,
                 )
                 .await
                 .is_err());
@@ -5516,6 +5566,7 @@ mod tests {
                     None,
                     None,
                     None,
+                    false,
                 )
                 .await
                 .is_err());
@@ -5541,6 +5592,7 @@ mod tests {
                     ]),
                     None,
                     None,
+                    false,
                 )
                 .await
                 .is_err());
@@ -5914,7 +5966,7 @@ mod tests {
             .await
             .unwrap();
         rocks_meta_store.run_upload().await.unwrap();
-        let uploaded = remote_fs.list("metastore-").await.unwrap();
+        let uploaded = remote_fs.list("metastore-".to_string()).await.unwrap();
         assert!(uploaded.is_empty());
 
         rocks_meta_store.upload_check_point().await.unwrap();
@@ -5927,7 +5979,7 @@ mod tests {
 
         rocks_meta_store.run_upload().await.unwrap();
 
-        let uploaded = remote_fs.list("metastore-").await.unwrap();
+        let uploaded = remote_fs.list("metastore-".to_string()).await.unwrap();
 
         let logs_uploaded = uploaded
             .into_iter()
@@ -5938,7 +5990,7 @@ mod tests {
 
         rocks_meta_store.run_upload().await.unwrap();
 
-        let uploaded = remote_fs.list("metastore-").await.unwrap();
+        let uploaded = remote_fs.list("metastore-".to_string()).await.unwrap();
 
         let logs_uploaded = uploaded
             .into_iter()
@@ -5955,7 +6007,7 @@ mod tests {
 
         rocks_meta_store.run_upload().await.unwrap();
 
-        let uploaded = remote_fs.list("metastore-").await.unwrap();
+        let uploaded = remote_fs.list("metastore-".to_string()).await.unwrap();
 
         let logs_uploaded = uploaded
             .into_iter()
@@ -6017,6 +6069,7 @@ mod tests {
                         None,
                         None,
                         None,
+                        false,
                     )
                     .await
                     .unwrap();
@@ -6239,6 +6292,7 @@ mod tests {
                     None,
                     None,
                     None,
+                    false,
                 )
                 .await
                 .unwrap();
@@ -6379,6 +6433,7 @@ mod tests {
                     None,
                     None,
                     None,
+                    false,
                 )
                 .await
                 .unwrap();

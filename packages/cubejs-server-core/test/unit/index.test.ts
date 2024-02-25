@@ -352,7 +352,7 @@ describe('index.test', () => {
 
     test('CompilerApi metaConfig', async () => {
       const metaConfig = await compilerApi.metaConfig({ requestId: 'XXX' });
-      expect(metaConfig?.length).toBeGreaterThan(0);
+      expect((<any[]>metaConfig)?.length).toBeGreaterThan(0);
       expect(metaConfig[0]).toHaveProperty('config');
       expect(metaConfig[0].config.hasOwnProperty('sql')).toBe(false);
       expect(metaConfigSpy).toHaveBeenCalled();
@@ -481,7 +481,7 @@ describe('index.test', () => {
       [
         'Cube Store is not supported on your system',
         {
-          warning: 'You are using MockOS platform with x64 architecture, which is not supported by Cube Store.'
+          warning: `You are using MockOS platform with ${process.arch} architecture, which is not supported by Cube Store.`
         }
       ]
     ]);

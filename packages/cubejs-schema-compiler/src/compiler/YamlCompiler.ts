@@ -3,7 +3,7 @@ import * as t from '@babel/types';
 import { parse } from '@babel/parser';
 import babelGenerator from '@babel/generator';
 import babelTraverse from '@babel/traverse';
-import { JinjaEngine, NativeInstance } from '@cubejs-backend/native';
+import { JinjaEngine, NativeInstance, PythonCtx } from '@cubejs-backend/native';
 
 import type { FileContent } from '@cubejs-backend/shared';
 
@@ -41,14 +41,18 @@ export class YamlCompiler {
       return this.jinjaEngine;
     }
 
-    this.jinjaEngine = this.nativeInstance.newJinjaEngine({
-      debugInfo: getEnv('devMode'),
-    });
-
-    return this.jinjaEngine;
+    throw new Error('Jinja engine was not initialized');
   }
 
-  public compileYamlWithJinjaFile(
+  public initFromPythonContext(ctx: PythonCtx) {
+    this.jinjaEngine = this.nativeInstance.newJinjaEngine({
+      debugInfo: getEnv('devMode'),
+      filters: ctx.filters,
+      workers: 1,
+    });
+  }
+
+  public async compileYamlWithJinjaFile(
     file: FileContent,
     errorsReport: ErrorReporter,
     cubes,
@@ -62,7 +66,10 @@ export class YamlCompiler {
   ) {
     const compiledFile = {
       fileName: file.fileName,
-      content: this.getJinjaEngine().renderTemplate(file.fileName, compileContext, pythonContext),
+      content: await this.getJinjaEngine().renderTemplate(file.fileName, compileContext, {
+        ...pythonContext.functions,
+        ...pythonContext.variables
+      }),
     };
 
     return this.compileYamlFile(
@@ -162,6 +169,10 @@ export class YamlCompiler {
       return this.extractProgramBodyIfNeeded(ast);
     } else if (typeof obj === 'boolean') {
       return t.booleanLiteral(obj);
+    } else if (typeof obj === 'number') {
+      return t.numericLiteral(obj);
+    } else if (obj === null && propertyPath.includes('meta')) {
+      return t.nullLiteral();
     }
 
     if (typeof obj === 'object' && obj !== null) {

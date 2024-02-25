@@ -31,6 +31,7 @@ describe('SQLInterface', () => {
       expect(session).toEqual({
         user: expect.toBeTypeOrNull(String),
         superuser: expect.any(Boolean),
+        securityContext: { foo: 'bar' }
       });
 
       // It's just an emulation that ApiGateway returns error
@@ -56,6 +57,7 @@ describe('SQLInterface', () => {
       expect(session).toEqual({
         user: expect.toBeTypeOrNull(String),
         superuser: expect.any(Boolean),
+        securityContext: { foo: 'bar' }
       });
 
       // It's just an emulation that ApiGateway returns error
@@ -98,6 +100,7 @@ describe('SQLInterface', () => {
       expect(session).toEqual({
         user: expect.toBeTypeOrNull(String),
         superuser: expect.any(Boolean),
+        securityContext: { foo: 'bar' },
       });
 
       return metaFixture;
@@ -125,6 +128,7 @@ describe('SQLInterface', () => {
         return {
           password: 'password_for_allowed_user',
           superuser: false,
+          securityContext: { foo: 'bar' },
         };
       }
 
@@ -132,11 +136,16 @@ describe('SQLInterface', () => {
         return {
           password: 'password_for_admin',
           superuser: true,
+          securityContext: { foo: 'admin' },
         };
       }
 
       throw new Error('Please specify user');
     });
+
+    const logLoadEvent = ({ event, properties }: { event: string, properties: any }) => {
+      console.log(`Load event: ${JSON.stringify({ type: event, ...properties })}`);
+    };
 
     const instance = await native.registerInterface({
       // nonce: '12345678910111213141516'.substring(0, 20),
@@ -147,7 +156,9 @@ describe('SQLInterface', () => {
       sql,
       meta,
       stream,
+      logLoadEvent,
       sqlGenerators,
+      canSwitchUserForSession: (_payload) => true,
     });
     console.log(instance);
 
@@ -174,6 +185,7 @@ describe('SQLInterface', () => {
             meta: null,
           },
           user: user || null,
+          password: null,
         });
       };
 
@@ -225,9 +237,9 @@ describe('SQLInterface', () => {
           meta: null,
         },
         user: 'allowed_user',
+        password: null,
       });
 
-      expect(meta.mock.calls.length).toEqual(1);
       expect(meta.mock.calls[0][0]).toEqual({
         request: {
           id: expect.any(String),
@@ -236,7 +248,9 @@ describe('SQLInterface', () => {
         session: {
           user: 'allowed_user',
           superuser: false,
-        }
+          securityContext: { foo: 'bar' },
+        },
+        onlyCompilerId: true
       });
 
       try {

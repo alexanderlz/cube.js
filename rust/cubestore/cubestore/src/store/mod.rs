@@ -182,7 +182,7 @@ pub struct ChunkStore {
     remote_fs: Arc<dyn RemoteFs>,
     cluster: Arc<dyn Cluster>,
     config: Arc<dyn ConfigObj>,
-    memory_chunks: RwLock<HashMap<u64, RecordBatch>>,
+    memory_chunks: RwLock<HashMap<String, RecordBatch>>,
     chunk_size: usize,
 }
 
@@ -250,9 +250,13 @@ pub trait ChunkDataStore: DIService + Send + Sync {
         index: IdRow<Index>,
         sort_key_size: usize,
     ) -> Result<(Vec<ArrayRef>, Vec<u64>), CubeError>;
-    async fn add_memory_chunk(&self, chunk_id: u64, batch: RecordBatch) -> Result<(), CubeError>;
-    async fn free_memory_chunk(&self, chunk_id: u64) -> Result<(), CubeError>;
-    async fn free_deleted_memory_chunks(&self, chunk_ids: Vec<u64>) -> Result<(), CubeError>;
+    async fn add_memory_chunk(
+        &self,
+        chunk_name: String,
+        batch: RecordBatch,
+    ) -> Result<(), CubeError>;
+    async fn free_memory_chunk(&self, chunk_name: String) -> Result<(), CubeError>;
+    async fn free_deleted_memory_chunks(&self, chunk_names: Vec<String>) -> Result<(), CubeError>;
     async fn add_persistent_chunk(
         &self,
         index: IdRow<Index>,
@@ -292,7 +296,7 @@ impl WALDataStore for WALStore {
             .create_wal(table.get_id(), data.len())
             .await?;
         let remote_path = WALStore::wal_remote_path(wal.get_id()).clone();
-        let local_file = self.remote_fs.local_file(&remote_path).await?;
+        let local_file = self.remote_fs.local_file(remote_path).await?;
         cube_ext::spawn_blocking(move || -> Result<(), CubeError> {
             save(local_file, data)?;
             Ok(())
@@ -315,8 +319,10 @@ impl WALDataStore for WALStore {
             )));
         }
         let remote_path = WALStore::wal_remote_path(wal_id);
-        self.remote_fs.download_file(&remote_path, None).await?;
-        let local_file = self.remote_fs.local_file(&remote_path).await?;
+        self.remote_fs
+            .download_file(remote_path.clone(), None)
+            .await?;
+        let local_file = self.remote_fs.local_file(remote_path.clone()).await?;
         Ok(
             cube_ext::spawn_blocking(move || -> Result<DataFrame, CubeError> {
                 Ok(load::<DataFrame>(local_file)?)
@@ -573,8 +579,9 @@ impl ChunkDataStore for ChunkStore {
                 return Err(CubeError::internal(format!("In memory chunk {:?} with owner node '{}' is trying to be repartitioned or compacted on non owner node '{}'", chunk, node_name, server_name)));
             }
             let memory_chunks = self.memory_chunks.read().await;
+            let chunk_name = chunk_file_name(chunk.get_id(), chunk.get_row().suffix());
             Ok(vec![memory_chunks
-                .get(&chunk.get_id())
+                .get(&chunk_name)
                 .map(|b| b.clone())
                 .unwrap_or(RecordBatch::new_empty(Arc::new(
                     arrow_schema(&index.get_row()),
@@ -667,8 +674,9 @@ impl ChunkDataStore for ChunkStore {
             if node_name != server_name {
                 return Err(CubeError::internal(format!("In memory chunk {:?} with owner node '{}' is trying to be repartitioned or compacted on non owner node '{}'", chunk, node_name, server_name)));
             }
+            let chunk_name = chunk_file_name(chunk.get_id(), chunk.get_row().suffix());
             let memory_chunks = self.memory_chunks.read().await;
-            Ok(memory_chunks.contains_key(&chunk.get_id()))
+            Ok(memory_chunks.contains_key(&chunk_name))
         } else {
             return Err(CubeError::internal(format!(
                 "Chunk {:?} is not in memory",
@@ -677,10 +685,14 @@ impl ChunkDataStore for ChunkStore {
         }
     }
 
-    async fn add_memory_chunk(&self, chunk_id: u64, batch: RecordBatch) -> Result<(), CubeError> {
+    async fn add_memory_chunk(
+        &self,
+        chunk_name: String,
+        batch: RecordBatch,
+    ) -> Result<(), CubeError> {
         self.report_in_memory_metrics().await?;
         let mut memory_chunks = self.memory_chunks.write().await;
-        memory_chunks.insert(chunk_id, batch);
+        memory_chunks.insert(chunk_name, batch);
         Ok(())
     }
     async fn add_persistent_chunk(
@@ -699,19 +711,19 @@ impl ChunkDataStore for ChunkStore {
         .await?
     }
 
-    async fn free_memory_chunk(&self, chunk_id: u64) -> Result<(), CubeError> {
+    async fn free_memory_chunk(&self, chunk_name: String) -> Result<(), CubeError> {
         self.report_in_memory_metrics().await?;
         let mut memory_chunks = self.memory_chunks.write().await;
-        memory_chunks.remove(&chunk_id);
+        memory_chunks.remove(&chunk_name);
         Ok(())
     }
 
     #[tracing::instrument(level = "trace", skip(self))]
-    async fn free_deleted_memory_chunks(&self, chunk_ids: Vec<u64>) -> Result<(), CubeError> {
-        let ids_set = chunk_ids.into_iter().collect::<HashSet<_>>();
+    async fn free_deleted_memory_chunks(&self, chunk_names: Vec<String>) -> Result<(), CubeError> {
+        let names_set = chunk_names.into_iter().collect::<HashSet<_>>();
         {
             let mut memory_chunks = self.memory_chunks.write().await;
-            memory_chunks.retain(|id, _| !ids_set.contains(id));
+            memory_chunks.retain(|name, _| !names_set.contains(name));
         }
 
         self.report_in_memory_metrics().await?;
@@ -735,7 +747,10 @@ impl ChunkStore {
         let file_size = chunk.get_row().file_size();
         let chunk_id = chunk.get_id();
         let remote_path = ChunkStore::chunk_file_name(chunk);
-        let result = self.remote_fs.download_file(&remote_path, file_size).await;
+        let result = self
+            .remote_fs
+            .download_file(remote_path.clone(), file_size)
+            .await;
 
         deactivate_table_on_corrupt_data(
             self.meta_store.clone(),
@@ -746,7 +761,7 @@ impl ChunkStore {
         .await;
 
         Ok((
-            self.remote_fs.local_file(&remote_path).await?,
+            self.remote_fs.local_file(remote_path.clone()).await?,
             index.into_row(),
         ))
     }
@@ -787,6 +802,19 @@ mod tests {
     use rocksdb::{Options, DB};
     use std::fs;
     use std::path::{Path, PathBuf};
+
+    #[test]
+    fn dataframe_deep_size_of() {
+        for (v, expected_size) in [(
+            DataFrame::new(
+                vec![Column::new("payload".to_string(), ColumnType::String, 0)],
+                vec![Row::new(vec![TableValue::String("foo".to_string())])],
+            ),
+            162_usize,
+        )] {
+            assert_eq!(v.deep_size_of(), expected_size, "size for {:?}", v);
+        }
+    }
 
     #[tokio::test]
     async fn create_wal_test() {
@@ -855,6 +883,7 @@ mod tests {
                     None,
                     None,
                     None,
+                    false,
                 )
                 .await
                 .unwrap();
@@ -950,6 +979,7 @@ mod tests {
                     None,
                     None,
                     None,
+                    false,
                 )
                 .await
                 .unwrap();
@@ -1059,6 +1089,7 @@ mod tests {
                     Some(vec![("sum".to_string(), "sum_int".to_string())]),
                     None,
                     None,
+                    false,
                 )
                 .await
                 .unwrap();
@@ -1323,9 +1354,10 @@ impl ChunkStore {
             let node_name = self.cluster.node_name_by_partition(&partition);
             let cluster = self.cluster.clone();
 
+            let chunk_name = chunk_file_name(chunk.get_id(), chunk.get_row().suffix());
             Ok(cube_ext::spawn(async move {
                 cluster
-                    .add_memory_chunk(&node_name, chunk.get_id(), batch)
+                    .add_memory_chunk(&node_name, chunk_name, batch)
                     .await?;
 
                 Ok((chunk, None))
@@ -1333,7 +1365,7 @@ impl ChunkStore {
         } else {
             trace!("New chunk allocated during partitioning: {:?}", chunk);
             let remote_path = ChunkStore::chunk_file_name(chunk.clone()).clone();
-            let local_file = self.remote_fs.temp_upload_path(&remote_path).await?;
+            let local_file = self.remote_fs.temp_upload_path(remote_path.clone()).await?;
             let local_file = scopeguard::guard(local_file, ensure_temp_file_is_dropped);
             let local_file_copy = local_file.clone();
             cube_ext::spawn_blocking(move || -> Result<(), CubeError> {
@@ -1345,7 +1377,9 @@ impl ChunkStore {
 
             let fs = self.remote_fs.clone();
             Ok(cube_ext::spawn(async move {
-                let file_size = fs.upload_file(&local_file, &remote_path).await?;
+                let file_size = fs
+                    .upload_file(local_file.to_string(), remote_path.clone())
+                    .await?;
                 Ok((chunk, Some(file_size)))
             }))
         }
